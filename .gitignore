@@ -1,0 +1,17 @@
+# React
+client/node_modules/
+client/dist/
+
+# Environment
+client/.env
+server/.env
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+.DS_Store

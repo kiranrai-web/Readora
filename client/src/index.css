@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.clip-wave {
+  clip-path: ellipse(71% 70% at 30% 10%);
+}
+
+.clip-wave_2{
+  clip-path: ellipse(90% 100% at 80% 90%);
+}
+/* Hide Google Translate branding and default styles */
+.goog-logo-link,
+.goog-te-gadget span,
+.goog-te-banner-frame.skiptranslate,
+#goog-gt-tt,
+.goog-te-balloon-frame {
+  display: none !important;
+}
+
+.goog-te-gadget {
+  font-size: 0 !important;
+}
+
+/* Optional: Customize the dropdown */
+.goog-te-combo {
+  font-size: 14px;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+

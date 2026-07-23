@@ -1,0 +1,164 @@
+import { FaSearch } from "react-icons/fa";
+import { FaChevronDown } from "react-icons/fa";
+import React from "react";
+import GoogleTranslate from "../googleTrans/googleTrans";
+import TimeDateDisplay from "../timeDateDisplay/timeDateDisplay";
+import { images } from "../../constants";
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useRef, useEffect } from "react";
+import { ChevronDown } from "lucide-react";
+import axios from 'axios';
+
+const API_BASE = 'http://localhost/Readora_API';
+
+const topbar = () => {
+  const user = JSON.parse(localStorage.getItem("user"));
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const [category, setCategory] = useState(searchParams.get('category') || 'All');
+  const [searchText, setSearchText] = useState(searchParams.get('q') || '');
+  const [categories, setCategories] = useState(['All']);
+
+  // Fetch categories from the API on mount
+  useEffect(() => {
+    axios
+      .get(`${API_BASE}/api/books.php`)
+      .then((res) => {
+        const data = Array.isArray(res.data) ? res.data : [];
+        const cats = [...new Set(data.map((b) => b.category).filter(Boolean))];
+        setCategories(['All', ...cats]);
+      })
+      .catch(() => {
+        setCategories(['All']);
+      });
+  }, []);
+
+  const logout = () => {
+    localStorage.removeItem("user");
+    window.location.href = "/login";
+  };
+
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    const params = new URLSearchParams();
+    if (category && category !== 'All') params.set('category', category);
+    if (searchText.trim()) params.set('q', searchText.trim());
+    const qs = params.toString();
+    navigate(qs ? `/search?${qs}` : '/search');
+  };
+
+  return (
+    <div className="topbar__search flex items-center justify-between px-10">
+      <form
+        onSubmit={handleSearch}
+        className="topbar__search-caty border shadow w-96 mx-4 my-5 flex rounded-full overflow-hidden"
+      >
+        <div className="relative">
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="appearance-none pl-3 pr-6 py-2 text-sm bg-[#F7F7FA] focus:outline-[#F76B56] text-[#4D4D4D] cursor-pointer"
+          >
+            {categories.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+
+          <FaChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs pointer-events-none" />
+        </div>
+
+        <input
+          type="text"
+          placeholder="Search..."
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          className="px-4 py-2 w-full focus:outline-none text-sm border-none"
+        />
+
+        <button type="submit" className="px-4 border-none py-2 bg-white text-[#F76B56]">
+          <FaSearch />
+        </button>
+      </form>
+      <div className="topbar__googleTrans">
+        <GoogleTranslate />
+      </div>
+      <div className="topbar__timeDateDisplay">
+        <TimeDateDisplay />
+      </div>
+      <div className="topbar__sign-log_btn flex items-center gap-3">
+        {
+          user ? (
+            <div className="relative inline-block" ref={ref}>
+              <div
+                onClick={() => setOpen(!open)}
+                className="flex items-center gap-3 px-2 py-1 bg-[#F7F7FA] rounded-full shadow-md cursor-pointer"
+              >
+                <img
+                  src={images.profile}
+                  className="w-10 h-10 rounded-full object-cover"
+                />
+                <span className="text-[#4D4D4D] text-lg font-medium">
+                  {user.name}
+                </span>
+                <ChevronDown
+                  className={`w-5 h-5 text-gray-500 transition-transform ${open ? "rotate-180" : ""
+                  }`}
+                />
+              </div>
+
+              {open && (
+                <div className="absolute right-1 mt-3 w-55 bg-white stroke-[#D1D1D1] rounded-2xl shadow-xl p-5 space-y-3 z-10">
+                  <div className="text-[#4D4D4D] text-lg cursor-pointer hover:text-black">
+                    Profile
+                  </div>
+                  <div className="text-[#4D4D4D] text-lg cursor-pointer hover:text-black">
+                    Favourite
+                  </div>
+                  <div className="text-[#4D4D4D] text-lg cursor-pointer hover:text-black">
+                    Payments
+                  </div>
+                  <div
+                    className="text-[#4D4D4D] text-lg cursor-pointer hover:text-red-500"
+                    onClick={logout}
+                  >
+                    Logout
+                  </div>
+                </div>
+              )}
+            </div>
+          ) :
+            (
+              <div className="flex items-center justify-center gap-2">
+                <Link to="/login">
+                  <button className="px-6 py-2 text-sm text-white bg-red-500 hover:bg-red-600 rounded-full transition">
+                    Sign In
+                  </button>
+                </Link>
+                <Link to="/register">
+                  <button className="px-6 py-2 text-sm text-red-500 border border-red-500 hover:bg-red-500 hover:text-white rounded-full transition">
+                    Register
+                  </button>
+                </Link>
+              </div>
+            )
+        }
+      </div>
+    </div>
+  );
+};
+
+export default topbar;
