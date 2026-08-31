@@ -68,19 +68,7 @@ const navbar = () => {
               About
             </NavLink>
              <NavLink
-              to="/shop"
-              end
-              className={({ isActive }) =>
-                `hover:text-[#4D4D4D] flex items-center gap-2 my-5 ${
-                  isActive ? "text-[#4D4D4D] font-semibold" : "text-[#8A8A8A]"
-                }`
-              }
-            >
-
-              Support
-            </NavLink>
-             <NavLink
-              to="shop"
+              to="/terms"
               end
               className={({ isActive }) =>
                 `hover:text-[#4D4D4D] flex items-center gap-2 my-5 ${

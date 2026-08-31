@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { QuotationAndArrival } from '../../components'
 
 const Home = () => {
   const [booklist, setBookList] = useState([]);
+  const navigate = useNavigate();
 
   const fetchBookList = async () => {
     try {
@@ -30,7 +32,11 @@ const Home = () => {
           {
             booklist.length > 0 ? 
               booklist.map((book,index)=>(
-                <div key={index} className='bg-white flex flex-col py-5 px-5 cursor-pointer gap-3 rounded-lg relative transform transition-transform duration-50 hover:scale-105'>
+                <div
+                  key={index}
+                  onClick={() => navigate(`/book/${book.id}`)}
+                  className='bg-white flex flex-col py-5 px-5 cursor-pointer gap-3 rounded-lg relative transform transition-transform duration-50 hover:scale-105'
+                >
                   <img src={`http://localhost/Readora_API/${book.image}`} alt={book.title}  className="w-full h-64 object-contain mx-auto"/>
                   <h1 className='text-[#4D4D4D] text-xl mb-4'>{book.title}</h1>
                   <p className='text-[#A7A7A7] absolute bottom-2'>
