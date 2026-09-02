@@ -116,9 +116,14 @@ const bookRow = ({ book, onToggleFavorite }) => {
         <button
           type="button"
           onClick={handlePreview}
-          className="border border-[#FA7C54] text-[#FA7C54] px-4 py-1 rounded text-xs font-medium hover:bg-[#FA7C54] hover:text-white transition-colors whitespace-nowrap"
+          disabled={book.isBorrowed}
+          className={`px-4 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
+            book.isBorrowed
+              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+              : 'border border-[#FA7C54] text-[#FA7C54] hover:bg-[#FA7C54] hover:text-white'
+          }`}
         >
-          Preview
+          {book.isBorrowed ? 'Borrowed' : 'Preview'}
         </button>
       </td>
     </tr>

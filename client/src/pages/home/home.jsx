@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { AiFillHeart, AiOutlineHeart } from 'react-icons/ai'
 import { QuotationAndArrival } from '../../components'
+import { toggleFavorite, getFavorites } from '../../services/favoritesService'
 
 const Home = () => {
   const [booklist, setBookList] = useState([]);
+  const [favoriteIds, setFavoriteIds] = useState([]);
   const navigate = useNavigate();
 
   const fetchBookList = async () => {
@@ -16,9 +19,29 @@ const Home = () => {
     }
   }
 
+  const loadFavorites = async () => {
+    const favs = await getFavorites();
+    setFavoriteIds(favs);
+  }
+
   useEffect(() => {
     fetchBookList();
+    loadFavorites();
   }, [])
+
+  const handleToggleFavorite = async (e, bookId) => {
+    e.stopPropagation();
+    const result = await toggleFavorite(bookId);
+    if (result.success) {
+      setFavoriteIds((prev) =>
+        result.favorited
+          ? [...prev, String(bookId)]
+          : prev.filter((id) => id !== String(bookId))
+      );
+    }
+  }
+
+  const isFav = (bookId) => favoriteIds.includes(String(bookId));
 
   return (
     <>
@@ -37,6 +60,17 @@ const Home = () => {
                   onClick={() => navigate(`/book/${book.id}`)}
                   className='bg-white flex flex-col py-5 px-5 cursor-pointer gap-3 rounded-lg relative transform transition-transform duration-50 hover:scale-105'
                 >
+                  <button
+                    onClick={(e) => handleToggleFavorite(e, book.id)}
+                    className="absolute top-3 right-3 text-2xl z-10"
+                    aria-label={isFav(book.id) ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    {isFav(book.id) ? (
+                      <AiFillHeart className="text-red-500" />
+                    ) : (
+                      <AiOutlineHeart className="text-gray-300" />
+                    )}
+                  </button>
                   <img src={`http://localhost/Readora_API/${book.image}`} alt={book.title}  className="w-full h-64 object-contain mx-auto"/>
                   <h1 className='text-[#4D4D4D] text-xl mb-4'>{book.title}</h1>
                   <p className='text-[#A7A7A7] absolute bottom-2'>

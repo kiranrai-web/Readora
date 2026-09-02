@@ -8,8 +8,10 @@ import {
   Share2,
   Check,
   MapPin,
-  ChevronDown,
+  Heart,
 } from 'lucide-react';
+import { getBorrowed } from '../../services/borrowedService';
+import { getFavorites, toggleFavorite } from '../../services/favoritesService';
 
 const API_BASE = 'http://localhost/Readora_API';
 
@@ -21,6 +23,8 @@ export default function Preview() {
   const [author, setAuthor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Overview');
+  const [isBorrowed, setIsBorrowed] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
 
   const navTabs = [
     'Overview',
@@ -38,14 +42,19 @@ export default function Preview() {
 
     // Fetch all books and find the one matching the id param
     // (API doesn't filter server-side, so we filter client-side)
-    axios
-      .get(`${API_BASE}/api/books.php`)
-      .then((res) => {
-        const data = Array.isArray(res.data) ? res.data : [];
+    Promise.all([
+      axios.get(`${API_BASE}/api/books.php`),
+      getBorrowed(),
+      getFavorites(),
+    ])
+      .then(([booksResponse, borrowedIds, favoriteIds]) => {
+        const data = Array.isArray(booksResponse.data) ? booksResponse.data : [];
         const matched = data.find((b) => String(b.id) === String(id));
         if (matched) {
           fetchedBook = matched;
           setBook(matched);
+          setIsBorrowed(borrowedIds.includes(String(id)));
+          setIsFavorite(favoriteIds.includes(String(id)));
           // Fetch authors to find a matching bio
           return axios.get(`${API_BASE}/api/authors.php`);
         }
@@ -94,6 +103,15 @@ export default function Preview() {
   const available = parseInt(book.available, 10) > 0;
   const coverUrl = `${API_BASE}/${book.image}`;
   const authorName = book.author ? book.author.replace(/\r?\n/g, '').trim() : 'Unknown';
+
+  const handleFavoriteToggle = async () => {
+    const result = await toggleFavorite(id);
+    if (!result.success) {
+      alert(result.message || 'Failed to update favorite.');
+      return;
+    }
+    setIsFavorite(result.favorited);
+  };
 
   return (
     <div className="min-h-screen bg-[#F4F5F9] p-6 text-gray-700 font-sans">
@@ -174,7 +192,7 @@ export default function Preview() {
                   <li className="flex items-center gap-1.5">
                     <span
                       className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
-                        available
+                        available && !isBorrowed
                           ? 'bg-emerald-500 text-white'
                           : 'bg-gray-200 text-gray-400'
                       }`}
@@ -204,9 +222,17 @@ export default function Preview() {
               </div>
 
               <div className="self-center">
-                <button className="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 shadow-sm">
-                  <span>Add to List</span>
-                  <ChevronDown className="w-3.5 h-3.5" />
+                <button
+                  type="button"
+                  onClick={handleFavoriteToggle}
+                  className={`px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 shadow-sm transition-colors ${
+                    isFavorite
+                      ? 'bg-[#F16A43] text-white hover:bg-[#e05831]'
+                      : 'bg-gray-700 hover:bg-gray-800 text-white'
+                  }`}
+                >
+                  <Heart className={`w-3.5 h-3.5 ${isFavorite ? 'fill-current' : ''}`} />
+                  <span>{isFavorite ? 'Favorited' : 'Add to Favorite'}</span>
                 </button>
               </div>
             </div>
@@ -220,9 +246,9 @@ export default function Preview() {
                     ? 'bg-[#F16A43] hover:bg-[#e05831] text-white'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
-                disabled={!available}
+                disabled={!available || isBorrowed}
               >
-                {available ? 'BORROW' : 'UNAVAILABLE'}
+                {isBorrowed ? 'BORROWED' : available ? 'BORROW' : 'UNAVAILABLE'}
               </button>
             </div>
           </div>

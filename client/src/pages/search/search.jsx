@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AiFillHeart, AiOutlineHeart } from 'react-icons/ai';
 import BookTable from '../../components/bookTable/bookTable';
-import { getFavorites, toggleFavorite as toggleFavService } from '../../services/favoritesService';
+import { getFavorites, toggleFavorite as toggleFavService, getCurrentUser } from '../../services/favoritesService';
+import { getBorrowed } from '../../services/borrowedService';
 
 const API_BASE = 'http://localhost/Readora_API';
 
@@ -38,8 +39,9 @@ const FavoriteButton = ({ isFavorite, onToggle }) => {
   );
 };
 
-const transformBook = (apiBook) => {
+const transformBook = (apiBook, favoriteIds, borrowedIds) => {
   const available = parseInt(apiBook.available, 10) > 0;
+  const isBorrowed = borrowedIds.includes(String(apiBook.id));
   return {
     id: apiBook.id,
     title: apiBook.title,
@@ -50,20 +52,23 @@ const transformBook = (apiBook) => {
     category: apiBook.category || 'Uncategorized',
     subCategory: null,
     edition: null,
-    status: available ? 'in-shelf' : 'borrowed',
+    status: isBorrowed || !available ? 'borrowed' : 'in-shelf',
     hardCopy: {
       available,
       location: available ? 'Shelf' : null,
     },
-    borrowedBy: available ? null : 'Someone',
-    isFavorite: getFavorites().includes(apiBook.id),
+    borrowedBy: isBorrowed ? 'You' : available ? null : 'Someone',
+    isBorrowed,
+    isFavorite: favoriteIds.includes(String(apiBook.id)),
   };
 };
 
 const Search = () => {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [favoriteIds, setFavoriteIds] = useState([]);
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const category = searchParams.get('category') || 'All';
   const searchQuery = searchParams.get('q') || '';
 
@@ -71,14 +76,24 @@ const Search = () => {
     fetchBooks();
   }, [category, searchQuery]);
 
+  useEffect(() => {
+    // Load user's favorites if logged in
+    const user = getCurrentUser();
+    if (user) {
+      getFavorites().then(setFavoriteIds);
+    }
+  }, []);
+
   const fetchBooks = () => {
     setLoading(true);
 
-    axios
-      .get(`${API_BASE}/api/books.php`)
-      .then((res) => {
-        let data = Array.isArray(res.data) ? res.data : [];
-        let transformed = data.map(transformBook);
+    Promise.all([
+      axios.get(`${API_BASE}/api/books.php`),
+      getBorrowed(),
+    ])
+      .then(([booksResponse, borrowedIds]) => {
+        let data = Array.isArray(booksResponse.data) ? booksResponse.data : [];
+        let transformed = data.map((b) => transformBook(b, favoriteIds, borrowedIds));
 
         if (category !== 'All') {
           transformed = transformed.filter(
@@ -104,13 +119,30 @@ const Search = () => {
       .finally(() => setLoading(false));
   };
 
-  const handleToggleFavorite = (bookId) => {
-    toggleFavService(bookId);
-    setBooks((prev) =>
-      prev.map((book) =>
-        book.id === bookId ? { ...book, isFavorite: !book.isFavorite } : book
-      )
-    );
+  const handleToggleFavorite = async (bookId) => {
+    const user = getCurrentUser();
+    if (!user) {
+      alert('Please login to add books to your favorites.');
+      navigate('/login');
+      return;
+    }
+
+    const result = await toggleFavService(bookId);
+    if (result.success) {
+      // Update local favorite ids
+      setFavoriteIds((prev) =>
+        result.favorited
+          ? [...prev, bookId]
+          : prev.filter((id) => id !== bookId)
+      );
+      setBooks((prev) =>
+        prev.map((book) =>
+          book.id === bookId ? { ...book, isFavorite: result.favorited } : book
+        )
+      );
+    } else {
+      alert(result.message || 'Failed to update favorite.');
+    }
   };
 
   return (

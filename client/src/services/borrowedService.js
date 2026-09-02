@@ -1,33 +1,100 @@
-const STORAGE_KEY = 'readora_borrowed';
+import axios from 'axios';
 
-export const getBorrowed = () => {
+const API_BASE = 'http://localhost/Readora_API';
+
+export const getCurrentUser = () => {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
+    return JSON.parse(localStorage.getItem('user'));
   } catch {
+    return null;
+  }
+};
+
+export const getBorrowed = async () => {
+  const user = getCurrentUser();
+  if (!user) return [];
+
+  try {
+    const res = await axios.get(`${API_BASE}/api/borrow.php`, {
+      params: { user_id: user.id },
+    });
+    const borrowed = res.data.borrowed || [];
+    console.log('Fetched borrowed from API:', borrowed);
+    return borrowed.map((id) => String(id));
+  } catch (err) {
+    console.error('Error fetching borrowed books:', err);
     return [];
   }
 };
 
-export const addBorrowed = (bookId) => {
-  const borrowed = getBorrowed();
-  if (!borrowed.includes(bookId)) {
-    borrowed.push(bookId);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(borrowed));
+export const getBorrowedDetails = async () => {
+  const user = getCurrentUser();
+  if (!user) return [];
+
+  try {
+    const res = await axios.get(`${API_BASE}/api/borrow.php`, {
+      params: { user_id: user.id },
+    });
+    return Array.isArray(res.data.borrowed_details) ? res.data.borrowed_details : [];
+  } catch (err) {
+    console.error('Error fetching borrowed book details:', err);
+    return [];
   }
-  return borrowed;
 };
 
-export const removeBorrowed = (bookId) => {
-  const borrowed = getBorrowed();
-  const index = borrowed.indexOf(bookId);
-  if (index !== -1) {
-    borrowed.splice(index, 1);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(borrowed));
+export const addBorrowed = async (bookId) => {
+  const user = getCurrentUser();
+  if (!user) {
+    return { success: false, message: 'Please login to borrow books.' };
   }
-  return borrowed;
+
+  try {
+    const res = await axios.post(`${API_BASE}/api/borrow.php`, {
+      user_id: user.id,
+      book_id: bookId,
+    });
+
+    return {
+      success: res.data.success !== false,
+      already_borrowed: !!res.data.already_borrowed,
+      message: res.data.message || 'Borrow request processed.',
+      available: res.data.available,
+      borrow_time_left: res.data.borrow_time_left,
+    };
+  } catch (err) {
+    const message = err?.response?.data?.message || 'Failed to borrow book.';
+    console.error('Error borrowing book:', err);
+    return { success: false, message };
+  }
 };
 
-export const isBorrowed = (bookId) => {
-  return getBorrowed().includes(bookId);
+export const returnBorrowed = async (bookId) => {
+  const user = getCurrentUser();
+  if (!user) {
+    return { success: false, message: 'Please login to return books.' };
+  }
+
+  try {
+    const res = await axios.post(`${API_BASE}/api/borrow.php`, {
+      user_id: user.id,
+      book_id: bookId,
+      action: 'return',
+    });
+
+    return {
+      success: res.data.success !== false,
+      message: res.data.message || 'Book returned successfully.',
+      available: res.data.available,
+      returned: !!res.data.returned,
+    };
+  } catch (err) {
+    const message = err?.response?.data?.message || 'Failed to return book.';
+    console.error('Error returning book:', err);
+    return { success: false, message };
+  }
+};
+
+export const isBorrowed = async (bookId) => {
+  const borrowed = await getBorrowed();
+  return borrowed.includes(bookId);
 };

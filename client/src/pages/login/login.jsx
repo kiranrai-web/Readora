@@ -29,7 +29,9 @@ const handleSubmit = async (e) => {
 
     if (result.data.success) {
       localStorage.setItem("user", JSON.stringify(result.data.user));
-      navigate("/");
+      // Redirect to admin panel if user is admin, otherwise to home
+      const redirectPath = result.data.user.role === 'admin' ? '/admin' : '/';
+      navigate(redirectPath);
     } else {
       alert(result.data.message);
     }

@@ -122,14 +122,14 @@ const topbar = () => {
 
               {open && (
                 <div className="absolute right-1 mt-3 w-55 bg-white stroke-[#D1D1D1] rounded-2xl shadow-xl p-5 space-y-3 z-10">
-                  <div className="text-[#4D4D4D] text-lg cursor-pointer hover:text-black">
+                  <div
+                    className="text-[#4D4D4D] text-lg cursor-pointer hover:text-black"
+                    onClick={() => {
+                      setOpen(false);
+                      navigate('/profile');
+                    }}
+                  >
                     Profile
-                  </div>
-                  <div className="text-[#4D4D4D] text-lg cursor-pointer hover:text-black">
-                    Favourite
-                  </div>
-                  <div className="text-[#4D4D4D] text-lg cursor-pointer hover:text-black">
-                    Payments
                   </div>
                   <div
                     className="text-[#4D4D4D] text-lg cursor-pointer hover:text-red-500"

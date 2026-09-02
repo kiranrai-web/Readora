@@ -7,7 +7,7 @@ import {
   Check,
   ChevronDown,
 } from 'lucide-react';
-import { addBorrowed } from '../../services/borrowedService';
+import { addBorrowed, getBorrowed, getCurrentUser } from '../../services/borrowedService';
 
 const API_BASE = 'http://localhost/Readora_API';
 
@@ -22,6 +22,7 @@ export default function Borrow() {
   // Single modal step state: 'FORM' | 'PROCESSING' | 'SUCCESS'
   const [modalStep, setModalStep] = useState('FORM');
   const [processingProgress, setProcessingProgress] = useState(0);
+  const [borrowMessage, setBorrowMessage] = useState('');
 
   // Form state
   const now = new Date();
@@ -46,13 +47,19 @@ export default function Borrow() {
   useEffect(() => {
     if (!id) return;
 
-    axios
-      .get(`${API_BASE}/api/books.php`)
-      .then((res) => {
-        const data = Array.isArray(res.data) ? res.data : [];
+    Promise.all([
+      axios.get(`${API_BASE}/api/books.php`),
+      getBorrowed(),
+    ])
+      .then(([booksResponse, borrowedIds]) => {
+        const data = Array.isArray(booksResponse.data) ? booksResponse.data : [];
         const matched = data.find((b) => String(b.id) === String(id));
         if (matched) {
           setBook(matched);
+          if (borrowedIds.includes(String(id))) {
+            setBorrowMessage('You have already borrowed this book. Borrowing must be returned through the admin.');
+            setModalStep('ALREADY_BORROWED');
+          }
         } else {
           setError('Book not found');
         }
@@ -63,19 +70,40 @@ export default function Borrow() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  const handleBorrowSubmit = (e) => {
+  const handleBorrowSubmit = async (e) => {
     e.preventDefault();
+
+    const user = getCurrentUser();
+    if (!user) {
+      alert('Please login to borrow books.');
+      navigate('/login');
+      return;
+    }
+
+    if (Number(book.available || 0) <= 0) {
+      alert('This book is currently unavailable.');
+      return;
+    }
+
     setModalStep('PROCESSING');
     setProcessingProgress(0);
 
-    // Animate progress from 0 to 100 over ~2.5 seconds
     const interval = setInterval(() => {
       setProcessingProgress((prev) => {
         const next = prev + Math.random() * 15 + 5;
         if (next >= 100) {
           clearInterval(interval);
-          addBorrowed(id);
-          setTimeout(() => setModalStep('SUCCESS'), 200);
+
+          addBorrowed(id).then((result) => {
+                  if (!result.success || result.already_borrowed) {
+                    setBorrowMessage(result.message || 'You have already borrowed this book. Borrowing must be returned through the admin.');
+                    setModalStep('ALREADY_BORROWED');
+              return;
+            }
+
+            setTimeout(() => setModalStep('SUCCESS'), 200);
+          });
+
           return 100;
         }
         return next;
@@ -230,6 +258,23 @@ export default function Borrow() {
       {modalStep !== null && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4">
           {/* STEP 1: FILL UP DETAILS FORM */}
+          {modalStep === 'ALREADY_BORROWED' && (
+            <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center space-y-5">
+              <div className="w-14 h-14 mx-auto rounded-full bg-gray-100 flex items-center justify-center">
+                <Check className="w-7 h-7 text-gray-500" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900">Already Borrowed</h2>
+              <p className="text-sm text-gray-500">{borrowMessage}</p>
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                className="w-full bg-[#F16A43] hover:bg-[#e05831] text-white py-3 rounded-xl font-bold text-xs uppercase shadow-md"
+              >
+                Go Back
+              </button>
+            </div>
+          )}
+
           {modalStep === 'FORM' && (
             <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl space-y-6 relative animate-in fade-in zoom-in-95 duration-200">
               <h2 className="text-xl font-bold text-center text-gray-900">
@@ -352,9 +397,14 @@ export default function Borrow() {
                 <div className="pt-2">
                   <button
                     type="submit"
-                    className="w-full bg-[#F16A43] hover:bg-[#e05831] text-white py-3 rounded-xl font-bold tracking-wider text-xs uppercase shadow-md transition-all"
+                    disabled={Number(book.available || 0) <= 0}
+                    className={`w-full py-3 rounded-xl font-bold tracking-wider text-xs uppercase shadow-md transition-all ${
+                      Number(book.available || 0) <= 0
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : 'bg-[#F16A43] hover:bg-[#e05831] text-white'
+                    }`}
                   >
-                    BORROW
+                    {Number(book.available || 0) <= 0 ? 'UNAVAILABLE' : 'BORROW'}
                   </button>
                 </div>
               </form>

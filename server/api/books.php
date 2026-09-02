@@ -15,6 +15,20 @@ if ($method === 'OPTIONS') {
 }
 
 if ($method === 'GET') {
+    // Keep stock consistent with active loans, including loans created before
+    // availability updates were added to the borrow endpoint.
+    $conn->exec("
+        UPDATE books b
+        SET available = GREATEST(
+            0,
+            b.quantity - (
+                SELECT COUNT(*)
+                FROM borrowed_books bb
+                WHERE bb.book_id = b.id AND bb.status = 'borrowed'
+            )
+        )
+    ");
+
     $stmt = $conn->query("
         SELECT *
         FROM books

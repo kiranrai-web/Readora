@@ -1,11 +1,16 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { BookOpen, UserPlus, CheckCircle2, Loader2, UploadCloud, X } from 'lucide-react';
+import { BookOpen, UserPlus, CheckCircle2, Loader2, UploadCloud, X, Users, RotateCcw } from 'lucide-react';
 
 const API_BASE = 'http://localhost/Readora_API';
 
 const admin = () => {
   const [activeForm, setActiveForm] = useState('book');
+  const [loans, setLoans] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [inventory, setInventory] = useState({ total_books: 0, borrowed_books: 0 });
+  const [loansLoading, setLoansLoading] = useState(false);
 
   // Book form state
   const [bookForm, setBookForm] = useState({
@@ -37,6 +42,45 @@ const admin = () => {
   const [imagePreview, setImagePreview] = useState(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
+
+  const loadLoans = async () => {
+    setLoansLoading(true);
+    try {
+      const res = await axios.get(`${API_BASE}/api/borrow.php`, {
+        params: { admin: '1' },
+      });
+      setLoans(Array.isArray(res.data.loans) ? res.data.loans : []);
+      setUsers(Array.isArray(res.data.users) ? res.data.users : []);
+      setTotalUsers(Number(res.data.total_users || 0));
+      setInventory(res.data.inventory || { total_books: 0, borrowed_books: 0 });
+    } catch (err) {
+      setError('Failed to load borrowed books');
+    } finally {
+      setLoansLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeForm === 'loans') loadLoans();
+  }, [activeForm]);
+
+  const handleAdminReturn = async (loan) => {
+    try {
+      const res = await axios.post(`${API_BASE}/api/borrow.php`, {
+        user_id: loan.user_id,
+        book_id: loan.book_id,
+        action: 'return',
+      });
+      if (!res.data.success) {
+        setError(res.data.message || 'Failed to return book');
+        return;
+      }
+      setMessage(`${loan.book_title} returned by ${loan.user_name}. Available copies: ${res.data.available}/${loan.quantity}.`);
+      loadLoans();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to return book');
+    }
+  };
 
   const handleBookChange = (e) => {
     setBookForm({ ...bookForm, [e.target.name]: e.target.value });
@@ -187,6 +231,17 @@ const admin = () => {
         {/* Form Tabs */}
         <div className="flex gap-4 mb-8">
           <button
+            onClick={() => setActiveForm('loans')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+              activeForm === 'loans'
+                ? 'bg-[#F16A43] text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Library Management
+          </button>
+          <button
             onClick={() => setActiveForm('book')}
             className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
               activeForm === 'book'
@@ -221,6 +276,102 @@ const admin = () => {
           <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3 mb-6">
             {error}
           </div>
+        )}
+
+        {activeForm === 'loans' && (
+          <section className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="bg-white rounded-2xl p-6 shadow-sm">
+                <Users className="w-5 h-5 text-[#F16A43] mb-3" />
+                <p className="text-xs text-gray-400">Total users</p>
+                <p className="text-3xl font-bold text-gray-800 mt-1">{totalUsers}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm">
+                <BookOpen className="w-5 h-5 text-[#F16A43] mb-3" />
+                <p className="text-xs text-gray-400">Active borrowed books</p>
+                <p className="text-3xl font-bold text-gray-800 mt-1">{loans.length}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm md:col-span-2">
+                <BookOpen className="w-5 h-5 text-[#F16A43] mb-3" />
+                <p className="text-xs text-gray-400">Book inventory</p>
+                <p className="text-2xl font-bold text-gray-800 mt-1">
+                  {inventory.total_books} total books
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {inventory.borrowed_books} currently borrowed
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-gray-100">
+                <h2 className="text-lg font-bold text-gray-800">Users</h2>
+                <p className="text-xs text-gray-400 mt-1">Registered users and their active borrowing totals.</p>
+              </div>
+              {loansLoading ? (
+                <p className="p-8 text-sm text-gray-400 text-center">Loading users...</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-gray-50 text-xs text-gray-400">
+                      <tr>
+                        <th className="px-6 py-3 font-medium">Name</th>
+                        <th className="px-6 py-3 font-medium">Email</th>
+                        <th className="px-6 py-3 font-medium">Joined Readora</th>
+                        <th className="px-6 py-3 font-medium">Books borrowed</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {users.map((user) => (
+                        <tr key={user.id} className="text-sm text-gray-600">
+                          <td className="px-6 py-4 font-semibold text-gray-800">{user.name}</td>
+                          <td className="px-6 py-4">{user.email}</td>
+                          <td className="px-6 py-4">
+                            {user.created_at ? new Date(user.created_at.replace(' ', 'T')).toLocaleDateString() : '—'}
+                          </td>
+                          <td className="px-6 py-4 font-semibold">{user.borrowed_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-gray-100">
+                <h2 className="text-lg font-bold text-gray-800">Current loans</h2>
+                <p className="text-xs text-gray-400 mt-1">Return a book only after the user hands it back.</p>
+              </div>
+              {loansLoading ? (
+                <p className="p-8 text-sm text-gray-400 text-center">Loading borrowed books...</p>
+              ) : loans.length === 0 ? (
+                <p className="p-8 text-sm text-gray-400 text-center">No active borrowed books.</p>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {loans.map((loan) => (
+                    <div key={loan.id} className="p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                      <div>
+                        <p className="font-semibold text-gray-800">{loan.book_title}</p>
+                        <p className="text-sm text-gray-500">{loan.user_name} · {loan.email}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Available: {loan.available}/{loan.quantity} · Borrowed {new Date(`${loan.borrowed_at.replace(' ', 'T')}Z`).toLocaleString()}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAdminReturn(loan)}
+                        className="flex items-center justify-center gap-2 bg-[#F16A43] hover:bg-[#e05831] text-white px-4 py-2 rounded-lg text-xs font-semibold"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Mark Returned
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
         )}
 
         {/* Book Form */}
