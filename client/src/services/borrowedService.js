@@ -58,6 +58,9 @@ export const addBorrowed = async (bookId, loanDays = 7) => {
     return {
       success: res.data.success !== false,
       already_borrowed: !!res.data.already_borrowed,
+      limit_reached: !!res.data.limit_reached,
+      active_borrow_count: Number(res.data.active_borrow_count || 0),
+      max_active_borrows: Number(res.data.max_active_borrows || 3),
       message: res.data.message || 'Borrow request processed.',
       available: res.data.available,
       borrow_time_left: res.data.borrow_time_left,
@@ -68,7 +71,13 @@ export const addBorrowed = async (bookId, loanDays = 7) => {
   } catch (err) {
     const message = err?.response?.data?.message || 'Failed to borrow book.';
     console.error('Error borrowing book:', err);
-    return { success: false, message };
+    return {
+    success: false,
+    limit_reached: !!err?.response?.data?.limit_reached,
+    active_borrow_count: Number(err?.response?.data?.active_borrow_count || 0),
+    max_active_borrows: Number(err?.response?.data?.max_active_borrows || 3),
+    message,
+    };
   }
 };
 

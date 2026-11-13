@@ -67,6 +67,9 @@ if ($method === 'GET') {
         $stmt = $conn->query("
             SELECT bb.id, bb.user_id, bb.book_id, bb.status, bb.borrowed_at,
                    bb.pickup_at, bb.pickup_expires_at, bb.loan_days,
+                   UNIX_TIMESTAMP(
+                       DATE_ADD(COALESCE(bb.pickup_at, bb.borrowed_at), INTERVAL bb.loan_days DAY)
+                   ) AS return_due_at_epoch,
                    u.name AS user_name, u.email,
                    b.title AS book_title, b.quantity, b.available
             FROM borrowed_books bb
@@ -112,7 +115,11 @@ if ($method === 'GET') {
     }
 
     $stmt = $conn->prepare("
-        SELECT book_id, borrowed_at, pickup_at, pickup_expires_at, loan_days, status
+        SELECT book_id, borrowed_at, pickup_at, pickup_expires_at, loan_days, status,
+               UNIX_TIMESTAMP(pickup_expires_at) AS pickup_expires_at_epoch,
+               UNIX_TIMESTAMP(
+                   DATE_ADD(COALESCE(pickup_at, borrowed_at), INTERVAL loan_days DAY)
+               ) AS return_due_at_epoch
         FROM borrowed_books
         WHERE user_id = ? AND status IN ('reserved', 'borrowed')
     ");
@@ -246,6 +253,13 @@ if ($method === 'POST' || $method === 'PUT') {
     }
 
     $conn->beginTransaction();
+    $userStmt = $conn->prepare("SELECT id FROM users WHERE id = ? LIMIT 1 FOR UPDATE");
+    $userStmt->execute([$user_id]);
+    if (!$userStmt->fetchColumn()) {
+        $conn->rollBack();
+        respond(["success" => false, "message" => "User not found."], 404);
+    }
+
     $bookStmt = $conn->prepare("SELECT available, quantity FROM books WHERE id = ? LIMIT 1 FOR UPDATE");
     $bookStmt->execute([$book_id]);
     $book = $bookStmt->fetch(PDO::FETCH_ASSOC);
@@ -277,6 +291,24 @@ if ($method === 'POST' || $method === 'PUT') {
             "borrow_time_left" => $remainingText,
             "borrowed_at" => $existing['borrowed_at']
         ]);
+    }
+
+    $activeCountStmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM borrowed_books
+        WHERE user_id = ? AND status IN ('reserved', 'borrowed')
+    ");
+    $activeCountStmt->execute([$user_id]);
+    $activeBorrowCount = (int)$activeCountStmt->fetchColumn();
+    if ($activeBorrowCount >= 3) {
+        $conn->rollBack();
+        respond([
+            "success" => false,
+            "limit_reached" => true,
+            "active_borrow_count" => $activeBorrowCount,
+            "max_active_borrows" => 3,
+            "message" => "You can have up to 3 active books at a time. Return a book to the library before borrowing another."
+        ], 409);
     }
 
     $available = (int)($book['available'] ?? 0);

@@ -35,7 +35,7 @@ const FavoriteButton = ({ isFavorite, onToggle }) => {
   );
 };
 
-const bookRow = ({ book, onToggleFavorite }) => {
+const BookRow = ({ book, onToggleFavorite }) => {
   const navigate = useNavigate();
 
   const handlePreview = () => {
@@ -66,8 +66,14 @@ const bookRow = ({ book, onToggleFavorite }) => {
       </td>
 
       <td className="py-4 px-4 text-sm text-[#4D4D4D] whitespace-nowrap">
-        {book.rating}
-        <span className="text-gray-400">/5</span>
+        {book.rating !== null && book.rating !== undefined ? (
+          <>
+            <span className="text-amber-500">★</span> {Number(book.rating).toFixed(1)}
+            <span className="text-gray-400">/5 ({book.reviewCount || 0})</span>
+          </>
+        ) : (
+          <span className="text-gray-400">No reviews</span>
+        )}
       </td>
 
       <td className="py-4 px-4 text-sm text-[#4D4D4D]">
@@ -129,4 +135,63 @@ const bookRow = ({ book, onToggleFavorite }) => {
   );
 };
 
-export default bookRow;
+export const BookCard = ({ book, onToggleFavorite }) => {
+  const navigate = useNavigate();
+
+  return (
+    <article className="flex min-w-0 gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+      <img
+        src={book.cover}
+        alt={book.title}
+        className="h-28 w-20 flex-shrink-0 rounded object-cover shadow-sm"
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="break-words text-sm font-semibold leading-snug text-[#4D4D4D]">
+              {book.title}
+            </h2>
+            <p className="mt-1 break-words text-xs text-gray-400">
+              {book.author}, {book.year}
+            </p>
+          </div>
+          <FavoriteButton
+            isFavorite={book.isFavorite}
+            onToggle={() => onToggleFavorite(book.id)}
+          />
+        </div>
+
+        <p className="mt-2 break-words text-xs text-gray-500">
+          {book.category}
+          {book.subCategory ? ` · ${book.subCategory}` : ''}
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {book.rating !== null && book.rating !== undefined ? (
+            <span className="text-xs text-[#4D4D4D]">
+              <span className="text-amber-500">★</span> {Number(book.rating).toFixed(1)}
+              <span className="text-gray-400">/5 ({book.reviewCount || 0})</span>
+            </span>
+          ) : (
+            <span className="text-xs text-gray-400">No reviews</span>
+          )}
+          <StatusBadge status={book.status} />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => navigate(`/book/${book.id}`)}
+          disabled={book.isBorrowed}
+          className={`mt-auto self-start rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+            book.isBorrowed
+              ? 'cursor-not-allowed bg-gray-200 text-gray-500'
+              : 'border border-[#FA7C54] text-[#FA7C54] hover:bg-[#FA7C54] hover:text-white'
+          }`}
+        >
+          {book.isBorrowed ? 'Borrowed' : 'Preview'}
+        </button>
+      </div>
+    </article>
+  );
+};
+
+export default BookRow;

@@ -133,8 +133,8 @@ export default function Shelf() {
         return { text: 'Waiting for pickup', urgent: false, overdue: false, reserved: true };
       }
 
-      const pickupDeadline = Date.parse(`${record.pickup_expires_at.replace(' ', 'T')}Z`);
-      if (!Number.isFinite(pickupDeadline)) {
+      const pickupDeadline = Number(record.pickup_expires_at_epoch) * 1000;
+      if (!Number.isFinite(pickupDeadline) || pickupDeadline <= 0) {
         return { text: 'Waiting for pickup', urgent: false, overdue: false, reserved: true };
       }
 
@@ -151,17 +151,16 @@ export default function Shelf() {
       };
     }
 
-    if (!record?.borrowed_at) {
+    if (!record?.return_due_at_epoch) {
       return { text: 'Return time managed by admin', urgent: false, overdue: false };
     }
 
-    const borrowedAt = Date.parse(`${(record.pickup_at || record.borrowed_at).replace(' ', 'T')}Z`);
-    if (!Number.isFinite(borrowedAt)) {
+    const returnDeadline = Number(record.return_due_at_epoch) * 1000;
+    if (!Number.isFinite(returnDeadline) || returnDeadline <= 0) {
       return { text: 'Return time managed by admin', urgent: false, overdue: false };
     }
 
-    const loanDays = Number(record.loan_days) || 7;
-    const remaining = borrowedAt + loanDays * 86400000 - currentTime;
+    const remaining = returnDeadline - currentTime;
     if (remaining <= 0) {
       return { text: 'Return overdue', urgent: true, overdue: true };
     }

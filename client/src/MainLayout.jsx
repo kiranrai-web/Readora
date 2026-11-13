@@ -4,17 +4,15 @@ import { Outlet } from "react-router-dom";
 
 const MainLayout = () => {
   return (
-    <div className="container bg-[#F7F7F7] h-screen w-full flex">
-      {/* Sidebar */}
-      <div className="sidebar w-[15%] fixed h-screen bg-white shadow-md">
+    <div className="min-h-screen w-full bg-[#F7F7F7] lg:flex">
+      <aside className="fixed inset-x-0 bottom-0 z-50 h-16 w-full bg-white shadow-md lg:inset-y-0 lg:bottom-auto lg:h-screen lg:w-[15%]">
         <Navbar className="w-full" />
-      </div>
+      </aside>
 
-      {/* Main Content */}
-      <div className="mainpage ml-[15%] w-[85%] overflow-y-auto">
-        <Topbar className="fixed" />
-        <div className="p-6">
-          <Outlet /> {/* This renders the current page content */}
+      <div className="mainpage min-w-0 w-full overflow-x-hidden lg:ml-[15%] lg:w-[85%] lg:overflow-y-auto">
+        <Topbar />
+        <div className="min-w-0 p-4 pb-24 sm:p-6 sm:pb-24 lg:pb-6">
+          <Outlet />
         </div>
       </div>
     </div>

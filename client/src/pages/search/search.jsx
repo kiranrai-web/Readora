@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AiFillHeart, AiOutlineHeart } from 'react-icons/ai';
@@ -49,7 +49,10 @@ const transformBook = (apiBook, favoriteIds, borrowedIds) => {
     author: apiBook.author,
     year: apiBook.year || new Date().getFullYear(),
     cover: `${API_BASE}/${apiBook.image}`,
-    rating: apiBook.rating || null,
+    rating: apiBook.rating === null || apiBook.rating === undefined
+      ? null
+      : Number(apiBook.rating),
+    reviewCount: Number(apiBook.review_count || 0),
     category: apiBook.category || 'Uncategorized',
     subCategory: null,
     edition: null,
@@ -67,16 +70,13 @@ const transformBook = (apiBook, favoriteIds, borrowedIds) => {
 const Search = () => {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [booksError, setBooksError] = useState('');
   const [favoriteIds, setFavoriteIds] = useState([]);
   const [alert, setAlert] = useState(null);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const category = searchParams.get('category') || 'All';
   const searchQuery = searchParams.get('q') || '';
-
-  useEffect(() => {
-    fetchBooks();
-  }, [category, searchQuery]);
 
   useEffect(() => {
     // Load user's favorites if logged in
@@ -86,15 +86,19 @@ const Search = () => {
     }
   }, []);
 
-  const fetchBooks = () => {
+  const fetchBooks = useCallback(() => {
     setLoading(true);
+    setBooksError('');
 
     Promise.all([
       axios.get(`${API_BASE}/api/books.php`),
       getBorrowed(),
     ])
       .then(([booksResponse, borrowedIds]) => {
-        let data = Array.isArray(booksResponse.data) ? booksResponse.data : [];
+        if (!Array.isArray(booksResponse.data)) {
+          throw new Error('The catalog response was invalid. Please try again.');
+        }
+        let data = booksResponse.data;
         let transformed = data.map((b) => transformBook(b, favoriteIds, borrowedIds));
 
         if (category !== 'All') {
@@ -117,9 +121,18 @@ const Search = () => {
       .catch((err) => {
         console.error('Error fetching books:', err);
         setBooks([]);
+        setBooksError(err.response?.data?.error || err.response?.data?.message || (
+          err.message === 'Network Error'
+            ? 'Unable to connect to the catalog. Check your connection and try again.'
+            : err.message || 'The catalog could not be loaded. Please try again.'
+        ));
       })
       .finally(() => setLoading(false));
-  };
+  }, [category, searchQuery, favoriteIds]);
+
+  useEffect(() => {
+    fetchBooks();
+  }, [fetchBooks]);
 
   const handleToggleFavorite = async (bookId) => {
     const user = getCurrentUser();
@@ -170,6 +183,17 @@ const Search = () => {
 
       {loading ? (
         <p className="text-gray-400 text-sm py-10 text-center">Loading books...</p>
+      ) : booksError ? (
+        <div className="rounded-xl border border-red-100 bg-white p-6 text-center shadow-sm">
+          <p role="alert" className="text-sm text-red-600">{booksError}</p>
+          <button
+            type="button"
+            onClick={fetchBooks}
+            className="mt-4 rounded-lg bg-[#F16A43] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#e05831]"
+          >
+            Retry
+          </button>
+        </div>
       ) : (
         <BookTable books={books} onToggleFavorite={handleToggleFavorite} />
       )}

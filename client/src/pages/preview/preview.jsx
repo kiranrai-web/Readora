@@ -305,9 +305,9 @@ export default function Preview() {
                 <div className="flex items-center gap-1 text-amber-400">
                   {reviewData.total_reviews > 0 ? (
                     <>
-                      {'★'.repeat(Math.round(Number(reviewData.average_rating)))}
+                      {'★'.repeat(Math.round(Number(book.rating)))}
                       <span className="text-gray-700 font-semibold ml-1">
-                        {reviewData.average_rating}/5 ({reviewData.total_reviews})
+                        {Number(book.rating).toFixed(1)}/5 ({book.review_count})
                       </span>
                     </>
                   ) : (

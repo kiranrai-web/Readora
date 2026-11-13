@@ -74,37 +74,37 @@ const QuotationAndArrival = () => {
   );
 
   return (
-    <div className="h-[230px] my-3 flex justify-between items-center text-white">
+    <div className="my-3 grid min-w-0 grid-cols-1 gap-4 text-white lg:h-[230px] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)] lg:items-center">
 
       {/* QUOTE SECTION (unchanged) */}
-      <div className="h-full quotation my-2 mx-6 relative py-8 px-7 rounded-lg bg-gradient-to-br  from-[#EB5231] to-[#571FCF] w-[35%]">
+      <div className="quotation relative min-h-[190px] min-w-0 rounded-lg bg-gradient-to-br from-[#EB5231] to-[#571FCF] px-5 py-6 sm:min-h-[210px] sm:px-7 sm:py-8 lg:my-2 lg:h-full lg:px-7">
         {quotes.length > 0 ? (
           <>
-            <h1 className="mb-4 text-xl">Today's Quote</h1>
+            <h1 className="mb-4 text-lg sm:text-xl">Today's Quote</h1>
             <div className={`transition-opacity duration-300 ${fadeQuote ? 'opacity-100' : 'opacity-0'}`}>
               <p className="mb-3">“{quotes[currentQuoteIndex].quote}”</p>
               <p className="text-right">- {quotes[currentQuoteIndex].author}</p>
             </div>
 
-           <div className="mt-4">
-  <div className="flex justify-start absolute bottom-10 left-8">
-    {quotes.map((_, idx) => (
-      <span
-        key={idx}
-        onClick={() => {
-          setFadeQuote(false);
-          setTimeout(() => {
-            setCurrentQuoteIndex(idx);
-            setFadeQuote(true);
-          }, 300);
-        }}
-        className={`h-2 w-2 mx-1 rounded-full cursor-pointer  ${
-          idx === currentQuoteIndex ? 'bg-white' : 'border'
-        }`}
-      />
-    ))}
-  </div>
-  </div>
+            <div className="absolute bottom-5 left-5 flex justify-start sm:left-8 sm:bottom-8">
+              {quotes.map((_, idx) => (
+                <button
+                  type="button"
+                  key={idx}
+                  aria-label={`Show quote ${idx + 1}`}
+                  onClick={() => {
+                    setFadeQuote(false);
+                    setTimeout(() => {
+                      setCurrentQuoteIndex(idx);
+                      setFadeQuote(true);
+                    }, 300);
+                  }}
+                  className={`mx-1 h-2 w-2 rounded-full ${
+                    idx === currentQuoteIndex ? 'bg-white' : 'border'
+                  }`}
+                />
+              ))}
+            </div>
           </>
         ) : (
           <p>Loading...</p>
@@ -112,19 +112,19 @@ const QuotationAndArrival = () => {
       </div>
 
       {/* NEW ARRIVALS SECTION */}
-      <div className="h-full flex border border-purple-300 rounded-lg overflow-hidden bg-white w-[68%] mr-4 relative">
+      <div className="relative flex h-[200px] min-w-0 w-full overflow-hidden rounded-lg border border-purple-300 bg-white sm:h-[230px] lg:mr-0 lg:h-full">
         <div className="flex items-center justify-center bg-gradient-to-br from-[#EB5231] to-[#571FCF] px-2">
-          <span className="text-white font-semibold text-lg [writing-mode:vertical-rl] rotate-180">
+          <span className="rotate-180 text-sm font-semibold text-white [writing-mode:vertical-rl] sm:text-lg">
             New Arrivals
           </span>
         </div>
 
-        <div className={`flex overflow-x-hidden gap-4 p-4 transition-opacity duration-500 ease-in-out ${fadeNew ? 'opacity-100' : 'opacity-0'}`}>
+        <div className={`flex min-w-0 flex-1 gap-3 overflow-x-auto p-3 transition-opacity duration-500 ease-in-out sm:gap-4 sm:p-4 ${fadeNew ? 'opacity-100' : 'opacity-0'}`}>
           {currentBooks.length > 0 ? (
             currentBooks.map((book, idx) => (
               <div
                 key={idx}
-                className="flex-shrink-0 w-40 h-48 bg-white rounded-xl shadow-md border border-gray-200 flex items-center justify-center"
+                className="flex h-full w-28 flex-shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white shadow-md sm:w-40"
               >
                 <img
                  src={`http://localhost/Readora_API/${book.image}`}

@@ -11,7 +11,7 @@ import axios from 'axios';
 
 const API_BASE = 'http://localhost/Readora_API';
 
-const topbar = () => {
+const Topbar = () => {
   const user = JSON.parse(localStorage.getItem("user"));
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -62,16 +62,16 @@ const topbar = () => {
   };
 
   return (
-    <div className="topbar__search flex items-center justify-between px-10">
+    <div className="topbar__search grid min-w-0 grid-cols-2 items-center gap-3 px-4 py-3 sm:px-6 lg:flex lg:justify-between lg:px-10 lg:py-0">
       <form
         onSubmit={handleSearch}
-        className="topbar__search-caty border shadow w-96 mx-4 my-5 flex rounded-full overflow-hidden"
+        className="topbar__search-caty col-span-2 flex min-w-0 w-full overflow-hidden rounded-full border shadow lg:mx-4 lg:my-5 lg:w-96 lg:flex-shrink-0"
       >
-        <div className="relative">
+        <div className="relative min-w-0 max-w-[42%]">
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="appearance-none pl-3 pr-6 py-2 text-sm bg-[#F7F7FA] focus:outline-[#F76B56] text-[#4D4D4D] cursor-pointer"
+            className="w-full appearance-none bg-[#F7F7FA] py-2 pl-3 pr-6 text-sm text-[#4D4D4D] focus:outline-[#F76B56] cursor-pointer"
           >
             {categories.map((cat) => (
               <option key={cat} value={cat}>{cat}</option>
@@ -86,20 +86,20 @@ const topbar = () => {
           placeholder="Search..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          className="px-4 py-2 w-full focus:outline-none text-sm border-none"
+          className="w-full min-w-0 border-none px-3 py-2 text-sm focus:outline-none sm:px-4"
         />
 
         <button type="submit" className="px-4 border-none py-2 bg-white text-[#F76B56]">
           <FaSearch />
         </button>
       </form>
-      <div className="topbar__googleTrans">
+      <div className="topbar__googleTrans min-w-0 justify-self-start lg:justify-self-auto">
         <GoogleTranslate />
       </div>
-      <div className="topbar__timeDateDisplay">
+      <div className="topbar__timeDateDisplay min-w-0 max-w-full justify-self-end">
         <TimeDateDisplay />
       </div>
-      <div className="topbar__sign-log_btn flex items-center gap-3">
+      <div className="topbar__sign-log_btn col-span-2 flex min-w-0 items-center justify-end gap-3 lg:col-span-1">
         {
           user ? (
             <div className="relative inline-block" ref={ref}>
@@ -111,7 +111,7 @@ const topbar = () => {
                   src={images.profile}
                   className="w-10 h-10 rounded-full object-cover"
                 />
-                <span className="text-[#4D4D4D] text-lg font-medium">
+                <span className="max-w-[35vw] truncate text-sm font-medium text-[#4D4D4D] sm:max-w-48 lg:text-lg">
                   {user.name}
                 </span>
                 <ChevronDown
@@ -161,4 +161,4 @@ const topbar = () => {
   );
 };
 
-export default topbar;
+export default Topbar;

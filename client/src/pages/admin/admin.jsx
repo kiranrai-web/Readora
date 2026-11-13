@@ -18,6 +18,10 @@ import {
   Star,
   Eye,
   EyeOff,
+  Search,
+  Pencil,
+  AlertTriangle,
+  Package,
 } from 'lucide-react';
 import { getCurrentUser } from '../../services/borrowedService';
 
@@ -26,6 +30,13 @@ const API_BASE = 'http://localhost/Readora_API';
 const Admin = () => {
   const [activeForm, setActiveForm] = useState('loans');
   const [loans, setLoans] = useState([]);
+  const [books, setBooks] = useState([]);
+  const [booksLoading, setBooksLoading] = useState(false);
+  const [booksError, setBooksError] = useState('');
+  const [bookQuery, setBookQuery] = useState('');
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [editingBook, setEditingBook] = useState(null);
+  const [bookSaving, setBookSaving] = useState(false);
   const [loanView, setLoanView] = useState('reserved');
   const [isBookActivityOpen, setIsBookActivityOpen] = useState(true);
   const [areUsersOpen, setAreUsersOpen] = useState(false);
@@ -85,10 +96,12 @@ const Admin = () => {
   const loadLoans = async () => {
     setLoansLoading(true);
     try {
-      const res = await axios.get(`${API_BASE}/api/borrow.php`, {
-        params: { admin: '1' },
-      });
+      const [res, booksResponse] = await Promise.all([
+        axios.get(`${API_BASE}/api/borrow.php`, { params: { admin: '1' } }),
+        axios.get(`${API_BASE}/api/books.php`),
+      ]);
       setLoans(Array.isArray(res.data.loans) ? res.data.loans : []);
+      setBooks(Array.isArray(booksResponse.data) ? booksResponse.data : []);
       setUsers(Array.isArray(res.data.users) ? res.data.users : []);
       setTotalUsers(Number(res.data.total_users || 0));
       setInventory(res.data.inventory || { total_books: 0, borrowed_books: 0 });
@@ -100,9 +113,60 @@ const Admin = () => {
     }
   };
 
+  const loadBooks = async () => {
+    setBooksLoading(true);
+    setBooksError('');
+    try {
+      const response = await axios.get(`${API_BASE}/api/books.php`);
+      if (!Array.isArray(response.data)) {
+        throw new Error('Invalid catalog response.');
+      }
+      setBooks(response.data);
+    } catch (requestError) {
+      console.error('Error loading catalog for admin:', requestError);
+      setBooks([]);
+      setBooksError(requestError.response?.data?.error || 'Failed to load books.');
+    } finally {
+      setBooksLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeForm === 'loans') loadLoans();
+    if (activeForm === 'manageBooks') loadBooks();
   }, [activeForm]);
+
+  const handleBookUpdate = async (event) => {
+    event.preventDefault();
+    if (!editingBook || bookSaving) return;
+    const admin = getCurrentUser();
+    if (!admin?.id) {
+      setError('Unable to verify the current admin. Please sign in again.');
+      return;
+    }
+
+    setBookSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await axios.put(`${API_BASE}/api/books.php`, {
+        ...editingBook,
+        id: editingBook.id,
+        admin_id: admin.id,
+        quantity: Number(editingBook.quantity),
+        is_new: Number(editingBook.is_new),
+      });
+      setMessage(`${editingBook.title} updated. ${response.data.available} of ${response.data.quantity} copies are available.`);
+      setEditingBook(null);
+      setLowStockOnly(false);
+      await loadBooks();
+    } catch (requestError) {
+      console.error('Error updating book:', requestError);
+      setError(requestError.response?.data?.error || 'Failed to update book.');
+    } finally {
+      setBookSaving(false);
+    }
+  };
 
   const loadReviews = async () => {
     const admin = getCurrentUser();
@@ -369,6 +433,7 @@ const Admin = () => {
       }
 
       const res = await axios.post(`${API_BASE}/api/books.php`, {
+        admin_id: getCurrentUser()?.id,
         title: bookForm.title,
         author: bookForm.author,
         category: bookForm.category,
@@ -430,11 +495,27 @@ const Admin = () => {
   const labelClass = "block text-xs font-semibold text-gray-700 mb-1.5";
   const sections = [
     { id: 'loans', label: 'Dashboard', description: 'Library overview and active loans', icon: LayoutDashboard },
+    { id: 'manageBooks', label: 'Manage Books', description: 'Edit catalog and stock levels', icon: Package },
     { id: 'reviews', label: 'Reviews', description: 'Moderate reader feedback', icon: MessageSquare },
     { id: 'book', label: 'Add Book', description: 'Add a title to your collection', icon: BookOpen },
     { id: 'author', label: 'Add Author', description: 'Add author information', icon: UserPlus },
   ];
   const activeSection = sections.find((section) => section.id === activeForm);
+  const overdueLoans = loans.filter((loan) =>
+    loan.status === 'borrowed' &&
+    Number(loan.return_due_at_epoch) > 0 &&
+    Number(loan.return_due_at_epoch) * 1000 <= Date.now()
+  );
+  const lowStockBooks = books.filter((book) =>
+    Number(book.quantity) > 0 && Number(book.available) <= 2
+  );
+  const filteredBooks = books.filter((book) => {
+    const query = bookQuery.trim().toLowerCase();
+    const matchesQuery = !query ||
+      String(book.title || '').toLowerCase().includes(query) ||
+      String(book.author || '').toLowerCase().includes(query);
+    return matchesQuery && (!lowStockOnly || (Number(book.quantity) > 0 && Number(book.available) <= 2));
+  });
 
   return (
     <div className="min-h-screen bg-[#F4F5F9] font-sans text-gray-700 md:flex">
@@ -452,7 +533,7 @@ const Admin = () => {
         <p className="mb-3 hidden px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400 md:block">
           Workspace
         </p>
-        <nav aria-label="Admin sections" className="flex gap-2 overflow-x-auto md:flex-col md:overflow-visible">
+        <nav aria-label="Admin sections" className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:flex md:flex-col">
           {sections.map((section) => {
             const Icon = section.icon;
             const isActive = activeForm === section.id;
@@ -466,14 +547,14 @@ const Admin = () => {
                   setError(null);
                 }}
                 aria-current={isActive ? 'page' : undefined}
-                className={`flex min-w-max items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors md:w-full ${
+                className={`flex min-w-0 w-full items-center gap-2 rounded-xl px-2 py-3 text-left transition-colors sm:gap-3 sm:px-3 ${
                   isActive
                     ? 'bg-[#F16A43] text-white shadow-sm shadow-orange-200'
                     : 'text-gray-600 hover:bg-orange-50 hover:text-[#F16A43]'
                 }`}
               >
                 <Icon className="h-5 w-5 flex-shrink-0" />
-                <span>
+                <span className="min-w-0">
                   <span className="block text-sm font-semibold">{section.label}</span>
                   <span className={`hidden text-[10px] md:block ${isActive ? 'text-white/75' : 'text-gray-400'}`}>
                     {section.description}
@@ -507,6 +588,8 @@ const Admin = () => {
               <p className="mt-1 text-sm text-gray-500">
                 {activeForm === 'loans'
                   ? 'Monitor your library and manage current loans.'
+                  : activeForm === 'manageBooks'
+                  ? 'Find books, update catalog details, and adjust stock.'
                   : activeForm === 'reviews'
                   ? 'Review reader feedback and moderate inappropriate content.'
                   : activeForm === 'book'
@@ -535,7 +618,7 @@ const Admin = () => {
 
         {activeForm === 'loans' && (
           <section className="space-y-6">
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
               <div className="bg-white rounded-2xl p-6 shadow-sm">
                 <Users className="w-5 h-5 text-[#F16A43] mb-3" />
                 <p className="text-xs text-gray-400">Total users</p>
@@ -555,6 +638,112 @@ const Admin = () => {
                 <RotateCcw className="w-5 h-5 text-[#F16A43] mb-3" />
                 <p className="text-xs text-gray-400">Currently borrowed</p>
                 <p className="text-3xl font-bold text-gray-800 mt-1">{inventory.borrowed_books}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoanView('overdue');
+                  setIsBookActivityOpen(true);
+                }}
+                className="rounded-2xl border border-red-100 bg-white p-6 text-left shadow-sm transition hover:border-red-200 hover:bg-red-50/40"
+              >
+                <AlertTriangle className="mb-3 h-5 w-5 text-red-500" />
+                <p className="text-xs text-gray-400">Overdue loans</p>
+                <p className="mt-1 text-3xl font-bold text-gray-800">{overdueLoans.length}</p>
+                <p className="mt-2 text-[11px] font-semibold text-red-600">View affected loans</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLowStockOnly(true);
+                  setBookQuery('');
+                  setActiveForm('manageBooks');
+                }}
+                className="rounded-2xl border border-amber-100 bg-white p-6 text-left shadow-sm transition hover:border-amber-200 hover:bg-amber-50/40"
+              >
+                <Package className="mb-3 h-5 w-5 text-amber-500" />
+                <p className="text-xs text-gray-400">Low stock titles</p>
+                <p className="mt-1 text-3xl font-bold text-gray-800">{lowStockBooks.length}</p>
+                <p className="mt-2 text-[11px] font-semibold text-amber-700">2 or fewer available · Manage</p>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+              <div className="rounded-2xl border border-red-100 bg-white p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 className="font-bold text-gray-800">Overdue loans</h2>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoanView('overdue');
+                      setIsBookActivityOpen(true);
+                    }}
+                    className="text-xs font-semibold text-[#F16A43] hover:underline"
+                  >
+                    View all
+                  </button>
+                </div>
+                {overdueLoans.length === 0 ? (
+                  <p className="text-sm text-gray-400">No overdue loans.</p>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {overdueLoans.slice(0, 3).map((loan) => (
+                      <button
+                        type="button"
+                        key={loan.id}
+                        onClick={() => {
+                          setLoanView('overdue');
+                          setIsBookActivityOpen(true);
+                          document.getElementById('admin-book-activity')?.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="flex w-full items-center justify-between gap-3 py-3 text-left"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-gray-700">{loan.book_title}</span>
+                          <span className="block truncate text-xs text-gray-400">{loan.user_name}</span>
+                        </span>
+                        <span className="flex-shrink-0 text-xs font-semibold text-red-600">Overdue</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="rounded-2xl border border-amber-100 bg-white p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 className="font-bold text-gray-800">Low stock</h2>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLowStockOnly(true);
+                      setBookQuery('');
+                      setActiveForm('manageBooks');
+                    }}
+                    className="text-xs font-semibold text-[#F16A43] hover:underline"
+                  >
+                    Manage stock
+                  </button>
+                </div>
+                {lowStockBooks.length === 0 ? (
+                  <p className="text-sm text-gray-400">No low-stock titles.</p>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {lowStockBooks.slice(0, 3).map((book) => (
+                      <button
+                        type="button"
+                        key={book.id}
+                        onClick={() => {
+                          setLowStockOnly(true);
+                          setBookQuery(String(book.title));
+                          setActiveForm('manageBooks');
+                        }}
+                        className="flex w-full items-center justify-between gap-3 py-3 text-left"
+                      >
+                        <span className="min-w-0 truncate text-sm font-semibold text-gray-700">{book.title}</span>
+                        <span className="flex-shrink-0 text-xs text-amber-700">{book.available}/{book.quantity} available</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -608,6 +797,19 @@ const Admin = () => {
                   >
                     Picked up <span className="ml-1">{loans.filter((loan) => loan.status === 'borrowed').length}</span>
                   </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={loanView === 'overdue'}
+                    onClick={() => setLoanView('overdue')}
+                    className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                      loanView === 'overdue'
+                        ? 'bg-red-100 text-red-800 ring-1 ring-red-200'
+                        : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    Overdue <span className="ml-1">{overdueLoans.length}</span>
+                  </button>
                 </div>
               </div>
                 )}
@@ -616,16 +818,24 @@ const Admin = () => {
                 <p className="p-8 text-sm text-gray-400 text-center">Loading book activity...</p>
               ) : (
                 (() => {
-                  const visibleLoans = loans.filter((loan) => loan.status === loanView);
+                  const visibleLoans = loanView === 'overdue'
+                    ? overdueLoans
+                    : loans.filter((loan) => loan.status === loanView);
                   return visibleLoans.length === 0 ? (
                     <p className="p-10 text-center text-sm text-gray-400">
                       {loanView === 'reserved'
                         ? 'No books are waiting for pickup.'
+                        : loanView === 'overdue'
+                        ? 'No overdue loans.'
                         : 'No books have been picked up yet.'}
                     </p>
                   ) : (
                     <div className="divide-y divide-gray-100">
-                      {visibleLoans.map((loan) => (
+                      {visibleLoans.map((loan) => {
+                        const isOverdue = loan.status === 'borrowed' &&
+                          Number(loan.return_due_at_epoch) > 0 &&
+                          Number(loan.return_due_at_epoch) * 1000 <= Date.now();
+                        return (
                         <div key={loan.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="font-semibold text-gray-800">{loan.book_title}</p>
@@ -633,17 +843,21 @@ const Admin = () => {
                         <p className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${
                           loan.status === 'reserved'
                             ? 'bg-sky-50 text-sky-700'
+                            : isOverdue
+                            ? 'bg-red-50 text-red-700'
                             : 'bg-emerald-50 text-emerald-700'
                         }`}>
                           {loan.status === 'reserved'
                             ? 'Awaiting pickup'
+                            : isOverdue
+                            ? 'Overdue'
                             : `Picked up · ${loan.loan_days}-day loan`}
                         </p>
                         <p className="mt-1 text-xs text-gray-400">
                           Copies available: {loan.available}/{loan.quantity} ·{' '}
                           {loan.status === 'reserved'
                             ? `Reserved ${new Date(`${loan.borrowed_at.replace(' ', 'T')}Z`).toLocaleString()} · Pick up by ${new Date(`${loan.pickup_expires_at.replace(' ', 'T')}Z`).toLocaleString()}`
-                            : `Picked up ${new Date(`${(loan.pickup_at || loan.borrowed_at).replace(' ', 'T')}Z`).toLocaleString()}`}
+                            : `Picked up ${new Date(`${(loan.pickup_at || loan.borrowed_at).replace(' ', 'T')}Z`).toLocaleString()} · Due ${new Date(Number(loan.return_due_at_epoch) * 1000).toLocaleString()}`}
                         </p>
                       </div>
                       <button
@@ -666,7 +880,8 @@ const Admin = () => {
                         {loan.status === 'reserved' ? 'Mark Picked Up' : 'Mark Returned'}
                       </button>
                     </div>
-                  ))}
+                  );
+                  })}
                     </div>
                   );
                 })()
@@ -816,6 +1031,196 @@ const Admin = () => {
                     </div>
                   </article>
                 ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeForm === 'manageBooks' && (
+          <section className="space-y-5">
+            <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+              <label className="relative block min-w-0 flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="search"
+                  value={bookQuery}
+                  onChange={(event) => setBookQuery(event.target.value)}
+                  placeholder="Search by title or author"
+                  className={`${inputClass} pl-10`}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setLowStockOnly((enabled) => !enabled)}
+                aria-pressed={lowStockOnly}
+                className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                  lowStockOnly
+                    ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-200'
+                    : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {lowStockOnly ? 'Showing low stock · Clear filter' : 'Show low stock'}
+              </button>
+            </div>
+
+            {editingBook && (
+              <form onSubmit={handleBookUpdate} className="space-y-4 rounded-2xl border border-orange-100 bg-white p-5 shadow-sm sm:p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">Edit book</h2>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Available copies are recalculated after accounting for active loans and reservations.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingBook(null)}
+                    aria-label="Cancel book editing"
+                    className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {[
+                    ['title', 'Title', true],
+                    ['author', 'Author', true],
+                    ['category', 'Category', false],
+                    ['image', 'Cover image path', false],
+                  ].map(([name, label, required]) => (
+                    <label key={name} className={labelClass}>
+                      {label}{required ? ' *' : ''}
+                      <input
+                        type="text"
+                        value={editingBook[name] ?? ''}
+                        onChange={(event) => setEditingBook((book) => ({ ...book, [name]: event.target.value }))}
+                        required={required}
+                        className={`${inputClass} mt-1.5`}
+                      />
+                    </label>
+                  ))}
+                  <label className={labelClass}>
+                    Total copies
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={editingBook.quantity}
+                      onChange={(event) => setEditingBook((book) => ({ ...book, quantity: event.target.value }))}
+                      required
+                      className={`${inputClass} mt-1.5`}
+                    />
+                    <span className="mt-1 block font-normal text-gray-400">
+                      Currently {editingBook.available} available; total cannot be reduced below active loans/reservations.
+                    </span>
+                  </label>
+                  <label className={labelClass}>
+                    New arrival
+                    <select
+                      value={editingBook.is_new}
+                      onChange={(event) => setEditingBook((book) => ({ ...book, is_new: event.target.value }))}
+                      className={`${inputClass} mt-1.5`}
+                    >
+                      <option value="0">No</option>
+                      <option value="1">Yes</option>
+                    </select>
+                  </label>
+                </div>
+                <label className={labelClass}>
+                  Summary
+                  <textarea
+                    rows={4}
+                    value={editingBook.summary ?? ''}
+                    onChange={(event) => setEditingBook((book) => ({ ...book, summary: event.target.value }))}
+                    className={`${inputClass} mt-1.5 resize-y`}
+                  />
+                </label>
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setEditingBook(null)}
+                    disabled={bookSaving}
+                    className="rounded-xl border border-gray-200 px-5 py-3 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={bookSaving}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-[#F16A43] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#e05831] disabled:opacity-60"
+                  >
+                    {bookSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {bookSaving ? 'Saving...' : 'Save changes'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {booksLoading ? (
+              <p className="rounded-2xl bg-white p-10 text-center text-sm text-gray-400">Loading catalog...</p>
+            ) : booksError ? (
+              <div className="rounded-2xl border border-red-100 bg-white p-8 text-center">
+                <p role="alert" className="text-sm text-red-600">{booksError}</p>
+                <button
+                  type="button"
+                  onClick={loadBooks}
+                  className="mt-4 rounded-lg bg-[#F16A43] px-4 py-2 text-sm font-semibold text-white hover:bg-[#e05831]"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : filteredBooks.length === 0 ? (
+              <p className="rounded-2xl bg-white p-10 text-center text-sm text-gray-400">
+                {books.length === 0 ? 'No books are in the catalog.' : 'No books match these filters.'}
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {filteredBooks.map((book) => {
+                  const isLowStock = Number(book.quantity) > 0 && Number(book.available) <= 2;
+                  return (
+                    <article key={book.id} className="flex min-w-0 gap-4 rounded-2xl bg-white p-4 shadow-sm sm:p-5">
+                      {book.image && (
+                        <img
+                          src={`${API_BASE}/${book.image}`}
+                          alt=""
+                          className="h-28 w-20 flex-shrink-0 rounded-lg bg-gray-50 object-contain"
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h2 className="break-words font-bold text-gray-800">{book.title}</h2>
+                            <p className="mt-1 break-words text-xs text-gray-500">{book.author}</p>
+                            <p className="mt-1 text-xs text-gray-400">{book.category || 'Uncategorized'}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEditingBook({
+                              ...book,
+                              id: Number(book.id),
+                              quantity: String(book.quantity ?? 0),
+                              is_new: String(book.is_new ?? '0'),
+                            })}
+                            aria-label={`Edit ${book.title}`}
+                            className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-orange-200 px-3 py-2 text-xs font-semibold text-[#D95531] transition hover:bg-orange-50"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </button>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                          <span className={`rounded-full px-2.5 py-1 font-semibold ${
+                            isLowStock ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                          }`}>
+                            {book.available}/{book.quantity} available
+                          </span>
+                          {isLowStock && <span className="font-semibold text-amber-700">Low stock</span>}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>

@@ -5,24 +5,13 @@ import {
   ArrowLeft,
   Scan,
   Check,
+  BookOpen,
+  X,
 } from 'lucide-react';
 import { addBorrowed, getBorrowed, getCurrentUser } from '../../services/borrowedService';
 import AlertCard from '../alertCard/alertCard';
 
 const API_BASE = 'http://localhost/Readora_API';
-
-const formatDateInput = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const addDays = (dateString, days) => {
-  if (!dateString) return '';
-  const [year, month, day] = dateString.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
-};
 
 export default function Borrow() {
   const { id } = useParams();
@@ -35,13 +24,9 @@ export default function Borrow() {
   const [modalStep, setModalStep] = useState('FORM');
   const [processingProgress, setProcessingProgress] = useState(0);
   const [borrowMessage, setBorrowMessage] = useState('');
+  const [activeBorrowCount, setActiveBorrowCount] = useState(0);
   const [alert, setAlert] = useState(null);
-  const [fromDate, setFromDate] = useState(() => formatDateInput(new Date()));
-  const [toDate, setToDate] = useState(() => addDays(formatDateInput(new Date()), 3));
-  const [description, setDescription] = useState('');
-  const todayDate = formatDateInput(new Date());
-  const minimumToDate = addDays(fromDate, 3);
-  const maximumToDate = addDays(fromDate, 30);
+  const [loanDays, setLoanDays] = useState(3);
 
   useEffect(() => {
     if (!id) return;
@@ -55,9 +40,12 @@ export default function Borrow() {
         const matched = data.find((b) => String(b.id) === String(id));
         if (matched) {
           setBook(matched);
+          setActiveBorrowCount(borrowedIds.length);
           if (borrowedIds.includes(String(id))) {
             setBorrowMessage('You have already borrowed this book. Borrowing must be returned through the admin.');
             setModalStep('ALREADY_BORROWED');
+          } else if (borrowedIds.length >= 3) {
+            setModalStep('LIMIT_REACHED');
           }
         } else {
           setError('Book not found');
@@ -91,16 +79,13 @@ export default function Borrow() {
       return;
     }
 
-    if (fromDate < todayDate) {
-      setAlert({
-        title: 'Choose a valid start date',
-        message: 'The borrow start date cannot be earlier than today.',
-      });
+    if (activeBorrowCount >= 3) {
+      setModalStep('LIMIT_REACHED');
       return;
     }
 
-    const borrowDuration = (Date.parse(`${toDate}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`)) / 86400000;
-    if (!Number.isFinite(borrowDuration) || borrowDuration < 3 || borrowDuration > 30) {
+    const selectedLoanDays = Number(loanDays);
+    if (!Number.isInteger(selectedLoanDays) || selectedLoanDays < 3 || selectedLoanDays > 30) {
       setAlert({
         title: 'Choose a valid borrow period',
         message: 'The borrow period must be at least 3 days and no more than 30 days.',
@@ -124,7 +109,7 @@ export default function Borrow() {
     }, 200);
 
     try {
-      const result = await addBorrowed(id, borrowDuration);
+      const result = await addBorrowed(id, selectedLoanDays);
       await waitForMinimumProcessingTime();
       clearInterval(interval);
       setProcessingProgress(100);
@@ -132,7 +117,11 @@ export default function Borrow() {
       if (!result.success || result.already_borrowed) {
         setModalStep('FORM');
         setAlert({
-          title: result.already_borrowed ? 'Already borrowed' : 'Unable to borrow',
+          title: result.limit_reached
+            ? 'Borrowing limit reached'
+            : result.already_borrowed
+            ? 'Already borrowed'
+            : 'Unable to borrow',
           message: result.message || 'Your borrow request could not be completed.',
         });
         return;
@@ -315,8 +304,35 @@ export default function Borrow() {
             </div>
           )}
 
+          {modalStep === 'LIMIT_REACHED' && (
+            <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center space-y-5">
+              <div className="w-14 h-14 mx-auto rounded-full bg-orange-50 flex items-center justify-center">
+                <BookOpen className="w-7 h-7 text-[#F16A43]" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900">Borrowing limit reached</h2>
+              <p className="text-sm leading-relaxed text-gray-500">
+                You currently have {activeBorrowCount} active books. You can have up to 3 reservations or loans at once. Return a book to the library before borrowing another.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate('/shelf')}
+                className="w-full bg-[#F16A43] hover:bg-[#e05831] text-white py-3 rounded-xl font-bold text-xs uppercase shadow-md"
+              >
+                Go to my shelf
+              </button>
+            </div>
+          )}
+
           {modalStep === 'FORM' && (
             <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl space-y-6 relative animate-in fade-in zoom-in-95 duration-200">
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                aria-label="Close borrowing form"
+                className="absolute right-4 top-4 rounded-full p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
               <h2 className="text-xl font-bold text-center text-gray-900">
                 Fill Up the Details
               </h2>
@@ -324,39 +340,24 @@ export default function Borrow() {
               <form onSubmit={handleBorrowSubmit} noValidate className="space-y-5">
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-2">From</label>
-                  <input
-                    type="date"
-                    value={fromDate}
-                    min={todayDate}
-                    onChange={(e) => {
-                      const nextFromDate = e.target.value;
-                      setFromDate(nextFromDate);
-                      if (!nextFromDate) return;
-                      const nextMinimumToDate = addDays(nextFromDate, 3);
-                      const nextMaximumToDate = addDays(nextFromDate, 30);
-                      if (toDate < nextMinimumToDate) setToDate(nextMinimumToDate);
-                      if (toDate > nextMaximumToDate) setToDate(nextMaximumToDate);
-                    }}
-                    required
+                  <label htmlFor="loan-duration" className="block text-xs font-semibold text-gray-700 mb-2">
+                    Borrow duration
+                  </label>
+                  <select
+                    id="loan-duration"
+                    value={loanDays}
+                    onChange={(event) => setLoanDays(Number(event.target.value))}
                     className="w-full rounded-lg bg-gray-100/80 px-3 py-2.5 text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-[#F16A43]/30"
-                  />
-                </div>
-
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-2">To</label>
-                  <input
-                    type="date"
-                    value={toDate}
-                    min={minimumToDate}
-                    max={maximumToDate}
-                    onChange={(e) => setToDate(e.target.value)}
-                    required
-                    className="w-full rounded-lg bg-gray-100/80 px-3 py-2.5 text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-[#F16A43]/30"
-                  />
+                  >
+                    {Array.from({ length: 28 }, (_, index) => index + 3).map((days) => (
+                      <option key={days} value={days}>{days} days</option>
+                    ))}
+                  </select>
                   <p className="mt-2 text-[11px] text-gray-400">
-                    Borrow for 3 to 30 days.
+                    Your reservation starts immediately. Pick up the book within 24 hours; your {loanDays}-day borrowing period starts when the admin confirms pickup.
+                  </p>
+                  <p className="mt-2 text-[11px] font-medium text-gray-500">
+                    Active books: {activeBorrowCount}/3
                   </p>
                 </div>
 
@@ -374,17 +375,6 @@ export default function Borrow() {
                   </div>
                 </div>
 
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-2">Description</label>
-                  <textarea
-                    rows={3}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Purpose"
-                    className="w-full border border-gray-200 rounded-xl p-3 text-xs text-gray-700 placeholder-gray-400 outline-none focus:border-[#F16A43] resize-none"
-                  />
-                </div>
 
                 <div className="pt-2">
                   <button
