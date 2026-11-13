@@ -65,13 +65,14 @@ const Topbar = () => {
     <div className="topbar__search grid min-w-0 grid-cols-2 items-center gap-3 px-4 py-3 sm:px-6 lg:flex lg:justify-between lg:px-10 lg:py-0">
       <form
         onSubmit={handleSearch}
-        className="topbar__search-caty col-span-2 flex min-w-0 w-full overflow-hidden rounded-full border shadow lg:mx-4 lg:my-5 lg:w-96 lg:flex-shrink-0"
+        className="topbar__search-caty col-span-2 flex min-w-0 w-full overflow-hidden rounded-full border border-gray-200 bg-white shadow-sm transition focus-within:border-orange-200 focus-within:ring-2 focus-within:ring-orange-100 lg:mx-4 lg:my-5 lg:w-96 lg:flex-shrink-0"
       >
-        <div className="relative min-w-0 max-w-[42%]">
+        <div className="relative w-[38%] min-w-[110px] max-w-[170px] flex-shrink-0 border-r border-gray-100 sm:min-w-[130px]">
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="w-full appearance-none bg-[#F7F7FA] py-2 pl-3 pr-6 text-sm text-[#4D4D4D] focus:outline-[#F76B56] cursor-pointer"
+            aria-label="Filter by category"
+            className="w-full cursor-pointer appearance-none truncate bg-gray-50 py-2.5 pl-3 pr-7 text-xs font-semibold text-gray-600 outline-none sm:text-sm"
           >
             {categories.map((cat) => (
               <option key={cat} value={cat}>{cat}</option>
@@ -83,13 +84,14 @@ const Topbar = () => {
 
         <input
           type="text"
-          placeholder="Search..."
+          aria-label="Search books"
+          placeholder="Search books..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          className="w-full min-w-0 border-none px-3 py-2 text-sm focus:outline-none sm:px-4"
+          className="w-full min-w-0 border-none px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none sm:px-4"
         />
 
-        <button type="submit" className="px-4 border-none py-2 bg-white text-[#F76B56]">
+        <button type="submit" aria-label="Submit book search" className="border-none bg-white px-4 py-2.5 text-[#F76B56] transition hover:bg-orange-50">
           <FaSearch />
         </button>
       </form>

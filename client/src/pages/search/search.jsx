@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AiFillHeart, AiOutlineHeart } from 'react-icons/ai';
@@ -72,6 +72,7 @@ const Search = () => {
   const [loading, setLoading] = useState(true);
   const [booksError, setBooksError] = useState('');
   const [favoriteIds, setFavoriteIds] = useState([]);
+  const [sortBy, setSortBy] = useState('title');
   const [alert, setAlert] = useState(null);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -167,24 +168,66 @@ const Search = () => {
     }
   };
 
+  const sortedBooks = useMemo(() => {
+    const sorted = [...books];
+    sorted.sort((a, b) => {
+      if (sortBy === 'rating') {
+        return (b.rating ?? -1) - (a.rating ?? -1) || a.title.localeCompare(b.title);
+      }
+      if (sortBy === 'availability') {
+        return Number(b.hardCopy.available) - Number(a.hardCopy.available) ||
+          a.title.localeCompare(b.title);
+      }
+      return a.title.localeCompare(b.title);
+    });
+    return sorted;
+  }, [books, sortBy]);
+
   return (
-    <div className="search__page">
-      {searchQuery && (
-        <p className="text-sm text-gray-500 mb-4">
-          Results for "<span className="font-medium">{searchQuery}</span>"
-          {category !== 'All' && (
-            <>
-              {' '}
-              in <span className="font-medium">{category}</span>
-            </>
-          )}
-        </p>
-      )}
+    <div className="search__page min-w-0">
+      <header className="mb-5 flex flex-col gap-4 rounded-2xl border border-orange-100/80 bg-gradient-to-r from-white via-white to-orange-50/70 p-5 shadow-sm sm:flex-row sm:items-end sm:justify-between sm:p-6">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#F16A43]">
+            Readora collection
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-800 sm:text-3xl">
+            {searchQuery ? 'Search results' : 'Explore books'}
+          </h1>
+          <p className="mt-1 break-words text-sm text-gray-500">
+            {searchQuery ? (
+              <>Showing matches for <span className="font-semibold text-gray-700">“{searchQuery}”</span></>
+            ) : (
+              'Find your next great read from the library.'
+            )}
+            {category !== 'All' && <> <span className="text-gray-400">in</span> <span className="font-medium text-gray-700">{category}</span></>}
+          </p>
+        </div>
+        {!loading && !booksError && (
+          <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
+            <p className="text-xs font-medium text-gray-500">
+              <span className="text-base font-bold text-gray-800">{sortedBooks.length}</span>
+              {' '}{sortedBooks.length === 1 ? 'book' : 'books'}
+            </p>
+            <label className="flex items-center gap-2 text-xs font-medium text-gray-500">
+              Sort by
+              <select
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value)}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 outline-none transition focus:border-[#F16A43] focus:ring-2 focus:ring-orange-100"
+              >
+                <option value="title">Title</option>
+                <option value="rating">Top rated</option>
+                <option value="availability">Available first</option>
+              </select>
+            </label>
+          </div>
+        )}
+      </header>
 
       {loading ? (
-        <p className="text-gray-400 text-sm py-10 text-center">Loading books...</p>
+        <p className="rounded-2xl bg-white py-12 text-center text-sm text-gray-400 shadow-sm">Loading books...</p>
       ) : booksError ? (
-        <div className="rounded-xl border border-red-100 bg-white p-6 text-center shadow-sm">
+        <div className="rounded-2xl border border-red-100 bg-white p-8 text-center shadow-sm">
           <p role="alert" className="text-sm text-red-600">{booksError}</p>
           <button
             type="button"
@@ -195,7 +238,7 @@ const Search = () => {
           </button>
         </div>
       ) : (
-        <BookTable books={books} onToggleFavorite={handleToggleFavorite} />
+        <BookTable books={sortedBooks} onToggleFavorite={handleToggleFavorite} />
       )}
       <AlertCard
         title={alert?.title}
