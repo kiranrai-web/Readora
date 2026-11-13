@@ -39,7 +39,6 @@ const bookRow = ({ book, onToggleFavorite }) => {
   const navigate = useNavigate();
 
   const handlePreview = () => {
-    // Send only the id, the preview page fetches full details 
     navigate(`/book/${book.id}`);
   };
 

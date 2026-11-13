@@ -6,6 +6,7 @@ header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 
 require "../config/db.php";
+require_once __DIR__ . "/borrow_helpers.php";
 
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -15,19 +16,8 @@ if ($method === 'OPTIONS') {
 }
 
 if ($method === 'GET') {
-    // Keep stock consistent with active loans, including loans created before
-    // availability updates were added to the borrow endpoint.
-    $conn->exec("
-        UPDATE books b
-        SET available = GREATEST(
-            0,
-            b.quantity - (
-                SELECT COUNT(*)
-                FROM borrowed_books bb
-                WHERE bb.book_id = b.id AND bb.status = 'borrowed'
-            )
-        )
-    ");
+    ensureBorrowSchema($conn);
+    expirePickupReservations($conn);
 
     $stmt = $conn->query("
         SELECT *

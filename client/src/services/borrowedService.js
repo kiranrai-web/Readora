@@ -42,7 +42,7 @@ export const getBorrowedDetails = async () => {
   }
 };
 
-export const addBorrowed = async (bookId) => {
+export const addBorrowed = async (bookId, loanDays = 7) => {
   const user = getCurrentUser();
   if (!user) {
     return { success: false, message: 'Please login to borrow books.' };
@@ -52,6 +52,7 @@ export const addBorrowed = async (bookId) => {
     const res = await axios.post(`${API_BASE}/api/borrow.php`, {
       user_id: user.id,
       book_id: bookId,
+      loan_days: loanDays,
     });
 
     return {
@@ -60,6 +61,9 @@ export const addBorrowed = async (bookId) => {
       message: res.data.message || 'Borrow request processed.',
       available: res.data.available,
       borrow_time_left: res.data.borrow_time_left,
+      status: res.data.status,
+      pickup_expires_at: res.data.pickup_expires_at,
+      loan_days: res.data.loan_days,
     };
   } catch (err) {
     const message = err?.response?.data?.message || 'Failed to borrow book.';

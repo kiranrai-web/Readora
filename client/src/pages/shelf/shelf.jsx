@@ -4,6 +4,7 @@ import { getFavorites, toggleFavorite as toggleFavService, getCurrentUser } from
 import { getBorrowed, getBorrowedDetails } from '../../services/borrowedService';
 import { AiFillHeart, AiOutlineHeart } from 'react-icons/ai';
 import { useNavigate } from 'react-router-dom';
+import AlertCard from '../../components/alertCard/alertCard';
 
 const API_BASE = 'http://localhost/Readora_API';
 
@@ -12,6 +13,20 @@ const categories = [
   'Borrowed Books',
   'New Arrivals',
 ];
+
+const formatRemainingTime = (remainingMilliseconds) => {
+  const totalMinutes = Math.ceil(remainingMilliseconds / 60000);
+
+  if (remainingMilliseconds >= 86400000) {
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    return `${days}d ${hours}h`;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes ? `${hours}h ${minutes}min` : `${hours}h`;
+};
 
 const transformBook = (apiBook, favoriteIds, borrowedIds) => {
   const available = parseInt(apiBook.available, 10) > 0;
@@ -40,6 +55,13 @@ export default function Shelf() {
   const [borrowedIds, setBorrowedIds] = useState([]);
   const [borrowedDetails, setBorrowedDetails] = useState([]);
   const [isLoggedIn, setIsLoggedIn] = useState(true);
+  const [alert, setAlert] = useState(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const user = getCurrentUser();
@@ -51,7 +73,7 @@ export default function Shelf() {
 
     setLoading(true);
 
-    // Load favorites and borrowed in parallel
+
     Promise.all([getFavorites(), getBorrowed(), getBorrowedDetails()])
       .then(([favs, borrowed, details]) => {
         setFavoriteIds(favs);
@@ -83,7 +105,10 @@ export default function Shelf() {
         )
       );
     } else {
-      alert(result.message || 'Failed to update favorite.');
+      setAlert({
+        title: 'Unable to update favorites',
+        message: result.message || 'Failed to update favorite.',
+      });
     }
   };
 
@@ -103,13 +128,50 @@ export default function Shelf() {
 
   const getReturnTime = (bookId) => {
     const record = borrowedDetails.find((item) => String(item.book_id) === String(bookId));
-    if (!record?.borrowed_at) return 'Return time managed by admin';
-    const borrowedAt = new Date(`${record.borrowed_at.replace(' ', 'T')}Z`);
-    const remaining = Math.max(0, borrowedAt.getTime() + 7 * 86400000 - Date.now());
-    const days = Math.floor(remaining / 86400000);
-    const hours = Math.floor((remaining % 86400000) / 3600000);
-    const minutes = Math.floor((remaining % 3600000) / 60000);
-    return `${days ? `${days}d ` : ''}${hours ? `${hours}h ` : ''}${minutes}m left to return`;
+    if (record?.status === 'reserved') {
+      if (!record.pickup_expires_at) {
+        return { text: 'Waiting for pickup', urgent: false, overdue: false, reserved: true };
+      }
+
+      const pickupDeadline = Date.parse(`${record.pickup_expires_at.replace(' ', 'T')}Z`);
+      if (!Number.isFinite(pickupDeadline)) {
+        return { text: 'Waiting for pickup', urgent: false, overdue: false, reserved: true };
+      }
+
+      const pickupRemaining = pickupDeadline - currentTime;
+      if (pickupRemaining <= 0) {
+        return { text: 'Pickup window expired', urgent: true, overdue: true, reserved: true };
+      }
+
+      return {
+        text: `Pick up within: ${formatRemainingTime(pickupRemaining)}`,
+        urgent: pickupRemaining < 6 * 3600000,
+        overdue: false,
+        reserved: true,
+      };
+    }
+
+    if (!record?.borrowed_at) {
+      return { text: 'Return time managed by admin', urgent: false, overdue: false };
+    }
+
+    const borrowedAt = Date.parse(`${(record.pickup_at || record.borrowed_at).replace(' ', 'T')}Z`);
+    if (!Number.isFinite(borrowedAt)) {
+      return { text: 'Return time managed by admin', urgent: false, overdue: false };
+    }
+
+    const loanDays = Number(record.loan_days) || 7;
+    const remaining = borrowedAt + loanDays * 86400000 - currentTime;
+    if (remaining <= 0) {
+      return { text: 'Return overdue', urgent: true, overdue: true };
+    }
+
+    return {
+      text: `Time left: ${formatRemainingTime(remaining)}`,
+      urgent: remaining < 86400000,
+      overdue: false,
+      reserved: false,
+    };
   };
 
   return (
@@ -251,18 +313,59 @@ export default function Shelf() {
                       </span>
                     </div>
 
-                    {activeTab === 'Borrowed Books' && book.isBorrowed && (
-                      <p className="mt-2 text-xs text-gray-500">{getReturnTime(book.id)}</p>
-                    )}
+                    {activeTab === 'Borrowed Books' && book.isBorrowed && (() => {
+                      const returnTime = getReturnTime(book.id);
+                      return (
+                        <p
+                          className={`mt-2 rounded-lg ${
+                            returnTime.urgent
+                              ? returnTime.overdue
+                                ? 'border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 shadow-sm'
+                                : 'border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800 shadow-sm'
+                              : returnTime.reserved
+                              ? 'border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-bold text-sky-800 shadow-sm'
+                              : 'text-sm font-semibold text-gray-700'
+                          }`}
+                        >
+                          {returnTime.text}
+                        </p>
+                      );
+                    })()}
+
+                    {activeTab === 'Borrowed Books' && book.isBorrowed && (() => {
+                      const reservation = borrowedDetails.find(
+                        (item) => String(item.book_id) === String(book.id)
+                      );
+                      const isReserved = reservation?.status === 'reserved';
+                      return (
+                        <p className="mt-2 text-xs font-medium text-[#F16A43]">
+                          {isReserved
+                            ? 'Please pick up your reserved book within 24 hours.'
+                            : 'Picked up — your return period is now running.'}
+                        </p>
+                      );
+                    })()}
 
                     {activeTab === 'Borrowed Books' && book.isBorrowed && (
-                      <button
-                        type="button"
-                        disabled
-                        className="mt-3 w-full rounded-lg py-2 text-xs font-semibold text-gray-500 bg-gray-200 cursor-not-allowed"
-                      >
-                        Borrowed
-                      </button>
+                      (() => {
+                        const reservation = borrowedDetails.find(
+                          (item) => String(item.book_id) === String(book.id)
+                        );
+                        const isReserved = reservation?.status === 'reserved';
+                        return (
+                          <button
+                            type="button"
+                            disabled
+                            className={`mt-3 w-full cursor-not-allowed rounded-lg border py-2 text-xs font-bold ${
+                              isReserved
+                                ? 'border-sky-200 bg-sky-100 text-sky-800'
+                                : 'border-gray-200 bg-gray-200 text-gray-600'
+                            }`}
+                          >
+                            {isReserved ? 'Pickup at library' : 'Borrowed'}
+                          </button>
+                        );
+                      })()
                     )}
                   </div>
                 ))}
@@ -271,6 +374,11 @@ export default function Shelf() {
           </>
         )}
       </div>
+      <AlertCard
+        title={alert?.title}
+        message={alert?.message}
+        onClose={() => setAlert(null)}
+      />
     </div>
   );
 }

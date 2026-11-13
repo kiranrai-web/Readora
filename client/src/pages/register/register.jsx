@@ -3,6 +3,7 @@ import {images} from '../../constants';
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
 import { useNavigate,Link } from "react-router-dom";
 import axios from 'axios';
+import AlertCard from '../../components/alertCard/alertCard';
 
 
 const Login = () => {
@@ -13,6 +14,7 @@ const Login = () => {
   const [password, setPassword] = useState();
   const [confirmPass, setConfirmPass] = useState();
   const navigate = useNavigate();
+  const [alert, setAlert] = useState(null);
 
   const togglePassword =()=>{
     setShowPassword((prev)=>!prev);
@@ -22,7 +24,10 @@ const Login = () => {
     e.preventDefault();
 
       if (password !== confirmPass) {
-    alert("Passwords do not match!");
+    setAlert({
+      title: 'Passwords do not match',
+      message: 'Please enter the same password in both fields.',
+    });
     return;
   }
 
@@ -30,7 +35,13 @@ const Login = () => {
     .then(result=>{ console.log(result)
       navigate('/login');
     })
-    .catch(err=>console.log(err))
+    .catch(err=>{
+      console.error('Error registering account:', err);
+      setAlert({
+        title: 'Unable to register',
+        message: err.response?.data?.message || 'Something went wrong. Please try again.',
+      });
+    })
   }
 
   return (
@@ -122,6 +133,11 @@ const Login = () => {
           </div>
         </div>
       </div>
+      <AlertCard
+        title={alert?.title}
+        message={alert?.message}
+        onClose={() => setAlert(null)}
+      />
     </div>
   );
 };

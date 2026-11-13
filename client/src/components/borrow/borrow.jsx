@@ -5,11 +5,24 @@ import {
   ArrowLeft,
   Scan,
   Check,
-  ChevronDown,
 } from 'lucide-react';
 import { addBorrowed, getBorrowed, getCurrentUser } from '../../services/borrowedService';
+import AlertCard from '../alertCard/alertCard';
 
 const API_BASE = 'http://localhost/Readora_API';
+
+const formatDateInput = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const addDays = (dateString, days) => {
+  if (!dateString) return '';
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+};
 
 export default function Borrow() {
   const { id } = useParams();
@@ -19,30 +32,16 @@ export default function Borrow() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Single modal step state: 'FORM' | 'PROCESSING' | 'SUCCESS'
   const [modalStep, setModalStep] = useState('FORM');
   const [processingProgress, setProcessingProgress] = useState(0);
   const [borrowMessage, setBorrowMessage] = useState('');
-
-  // Form state
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  const currentYear = now.getFullYear();
-  const yearOptions = Array.from({ length: 6 }, (_, i) => String(currentYear + i));
-  const dayOptions = Array.from({ length: 31 }, (_, i) => pad(i + 1));
-  const monthOptions = Array.from({ length: 12 }, (_, i) => pad(i + 1));
-
-  const [fromDate, setFromDate] = useState({
-    day: pad(now.getDate()),
-    month: pad(now.getMonth() + 1),
-    year: String(currentYear),
-  });
-  const [toDate, setToDate] = useState({
-    day: pad(now.getDate()),
-    month: pad(now.getMonth() + 1),
-    year: String(currentYear),
-  });
+  const [alert, setAlert] = useState(null);
+  const [fromDate, setFromDate] = useState(() => formatDateInput(new Date()));
+  const [toDate, setToDate] = useState(() => addDays(formatDateInput(new Date()), 3));
   const [description, setDescription] = useState('');
+  const todayDate = formatDateInput(new Date());
+  const minimumToDate = addDays(fromDate, 3);
+  const maximumToDate = addDays(fromDate, 30);
 
   useEffect(() => {
     if (!id) return;
@@ -75,40 +74,81 @@ export default function Borrow() {
 
     const user = getCurrentUser();
     if (!user) {
-      alert('Please login to borrow books.');
-      navigate('/login');
+      setAlert({
+        title: 'Sign in required',
+        message: 'Please sign in to borrow books.',
+        actionLabel: 'Sign in',
+        onAction: () => navigate('/login'),
+      });
       return;
     }
 
     if (Number(book.available || 0) <= 0) {
-      alert('This book is currently unavailable.');
+      setAlert({
+        title: 'Book unavailable',
+        message: 'This book is currently unavailable.',
+      });
+      return;
+    }
+
+    if (fromDate < todayDate) {
+      setAlert({
+        title: 'Choose a valid start date',
+        message: 'The borrow start date cannot be earlier than today.',
+      });
+      return;
+    }
+
+    const borrowDuration = (Date.parse(`${toDate}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`)) / 86400000;
+    if (!Number.isFinite(borrowDuration) || borrowDuration < 3 || borrowDuration > 30) {
+      setAlert({
+        title: 'Choose a valid borrow period',
+        message: 'The borrow period must be at least 3 days and no more than 30 days.',
+      });
       return;
     }
 
     setModalStep('PROCESSING');
     setProcessingProgress(0);
 
-    const interval = setInterval(() => {
-      setProcessingProgress((prev) => {
-        const next = prev + Math.random() * 15 + 5;
-        if (next >= 100) {
-          clearInterval(interval);
-
-          addBorrowed(id).then((result) => {
-                  if (!result.success || result.already_borrowed) {
-                    setBorrowMessage(result.message || 'You have already borrowed this book. Borrowing must be returned through the admin.');
-                    setModalStep('ALREADY_BORROWED');
-              return;
-            }
-
-            setTimeout(() => setModalStep('SUCCESS'), 200);
-          });
-
-          return 100;
-        }
-        return next;
+    const processingStartedAt = Date.now();
+    const waitForMinimumProcessingTime = () =>
+      new Promise((resolve) => {
+        window.setTimeout(
+          resolve,
+          Math.max(0, 1500 - (Date.now() - processingStartedAt))
+        );
       });
+    const interval = setInterval(() => {
+      setProcessingProgress((prev) => Math.min(prev + 8, 90));
     }, 200);
+
+    try {
+      const result = await addBorrowed(id, borrowDuration);
+      await waitForMinimumProcessingTime();
+      clearInterval(interval);
+      setProcessingProgress(100);
+
+      if (!result.success || result.already_borrowed) {
+        setModalStep('FORM');
+        setAlert({
+          title: result.already_borrowed ? 'Already borrowed' : 'Unable to borrow',
+          message: result.message || 'Your borrow request could not be completed.',
+        });
+        return;
+      }
+
+      setModalStep('SUCCESS');
+    } catch (requestError) {
+      await waitForMinimumProcessingTime();
+      clearInterval(interval);
+      console.error('Error processing borrow request:', requestError);
+      setModalStep('FORM');
+      setAlert({
+        title: 'Unable to borrow',
+        message: 'Something went wrong while processing your request. Please try again.',
+      });
+    }
   };
 
   if (loading) {
@@ -137,7 +177,7 @@ export default function Borrow() {
 
   return (
     <div className="min-h-screen bg-[#F4F5F9] font-sans text-gray-700 relative">
-      {/* Main Container */}
+
       <main className="p-6 max-w-7xl mx-auto space-y-6">
         <button
           onClick={() => navigate(-1)}
@@ -147,9 +187,9 @@ export default function Borrow() {
           <span>Back to results</span>
         </button>
 
-        {/* Book Main Card Section */}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Cover */}
+
           <div className="lg:col-span-3 bg-white rounded-2xl p-6 shadow-sm flex flex-col items-center">
             <div className="w-48 h-64 rounded shadow-md overflow-hidden mb-6">
               <img
@@ -160,7 +200,7 @@ export default function Borrow() {
             </div>
           </div>
 
-          {/* Book Info */}
+
           <div className="lg:col-span-5 space-y-6">
             <div>
               <h1 className="text-3xl font-bold text-gray-800">{book.title}</h1>
@@ -218,7 +258,7 @@ export default function Borrow() {
             )}
           </div>
 
-          {/* Author Block */}
+
           <div className="lg:col-span-4 bg-white rounded-2xl p-6 shadow-sm space-y-4">
             <h2 className="text-lg font-bold">
               <span className="text-[#F16A43]">About</span> this Book
@@ -231,7 +271,7 @@ export default function Borrow() {
           </div>
         </div>
 
-        {/* Lower Metadata Grid */}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <div className="lg:col-span-3 bg-white rounded-2xl p-6 shadow-sm">
             <p className="text-[11px] text-gray-400 font-medium">Total Copies</p>
@@ -254,10 +294,10 @@ export default function Borrow() {
         </div>
       </main>
 
-      {/* ==================== INTERACTIVE MODAL FLOW ==================== */}
+
       {modalStep !== null && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4">
-          {/* STEP 1: FILL UP DETAILS FORM */}
+
           {modalStep === 'ALREADY_BORROWED' && (
             <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center space-y-5">
               <div className="w-14 h-14 mx-auto rounded-full bg-gray-100 flex items-center justify-center">
@@ -281,94 +321,46 @@ export default function Borrow() {
                 Fill Up the Details
               </h2>
 
-              <form onSubmit={handleBorrowSubmit} className="space-y-5">
-                {/* From Date */}
+              <form onSubmit={handleBorrowSubmit} noValidate className="space-y-5">
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-2">From</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="relative">
-                      <select
-                        value={fromDate.day}
-                        onChange={(e) => setFromDate({...fromDate, day: e.target.value})}
-                        className="w-full bg-gray-100/80 text-gray-700 text-xs py-2.5 px-3 rounded-lg appearance-none outline-none font-medium text-center"
-                      >
-                        {dayOptions.map((d) => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-3 pointer-events-none" />
-                    </div>
-                    <div className="relative">
-                      <select
-                        value={fromDate.month}
-                        onChange={(e) => setFromDate({...fromDate, month: e.target.value})}
-                        className="w-full bg-gray-100/80 text-gray-700 text-xs py-2.5 px-3 rounded-lg appearance-none outline-none font-medium text-center"
-                      >
-                        {monthOptions.map((m) => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-3 pointer-events-none" />
-                    </div>
-                    <div className="relative">
-                      <select
-                        value={fromDate.year}
-                        onChange={(e) => setFromDate({...fromDate, year: e.target.value})}
-                        className="w-full bg-gray-100/80 text-gray-700 text-xs py-2.5 px-3 rounded-lg appearance-none outline-none font-medium text-center"
-                      >
-                        {yearOptions.map((y) => (
-                          <option key={y} value={y}>{y}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-3 pointer-events-none" />
-                    </div>
-                  </div>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    min={todayDate}
+                    onChange={(e) => {
+                      const nextFromDate = e.target.value;
+                      setFromDate(nextFromDate);
+                      if (!nextFromDate) return;
+                      const nextMinimumToDate = addDays(nextFromDate, 3);
+                      const nextMaximumToDate = addDays(nextFromDate, 30);
+                      if (toDate < nextMinimumToDate) setToDate(nextMinimumToDate);
+                      if (toDate > nextMaximumToDate) setToDate(nextMaximumToDate);
+                    }}
+                    required
+                    className="w-full rounded-lg bg-gray-100/80 px-3 py-2.5 text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-[#F16A43]/30"
+                  />
                 </div>
 
-                {/* To Date */}
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-2">To</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="relative">
-                      <select
-                        value={toDate.day}
-                        onChange={(e) => setToDate({...toDate, day: e.target.value})}
-                        className="w-full bg-gray-100/80 text-gray-700 text-xs py-2.5 px-3 rounded-lg appearance-none outline-none font-medium text-center"
-                      >
-                        {dayOptions.map((d) => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-3 pointer-events-none" />
-                    </div>
-                    <div className="relative">
-                      <select
-                        value={toDate.month}
-                        onChange={(e) => setToDate({...toDate, month: e.target.value})}
-                        className="w-full bg-gray-100/80 text-gray-700 text-xs py-2.5 px-3 rounded-lg appearance-none outline-none font-medium text-center"
-                      >
-                        {monthOptions.map((m) => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-3 pointer-events-none" />
-                    </div>
-                    <div className="relative">
-                      <select
-                        value={toDate.year}
-                        onChange={(e) => setToDate({...toDate, year: e.target.value})}
-                        className="w-full bg-gray-100/80 text-gray-700 text-xs py-2.5 px-3 rounded-lg appearance-none outline-none font-medium text-center"
-                      >
-                        {yearOptions.map((y) => (
-                          <option key={y} value={y}>{y}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-3 pointer-events-none" />
-                    </div>
-                  </div>
+                  <input
+                    type="date"
+                    value={toDate}
+                    min={minimumToDate}
+                    max={maximumToDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                    required
+                    className="w-full rounded-lg bg-gray-100/80 px-3 py-2.5 text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-[#F16A43]/30"
+                  />
+                  <p className="mt-2 text-[11px] text-gray-400">
+                    Borrow for 3 to 30 days.
+                  </p>
                 </div>
 
-                {/* Serial No — auto-generated */}
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-2">Book Serial No.</label>
                   <div className="relative">
@@ -382,7 +374,7 @@ export default function Borrow() {
                   </div>
                 </div>
 
-                {/* Description */}
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-2">Description</label>
                   <textarea
@@ -411,14 +403,14 @@ export default function Borrow() {
             </div>
           )}
 
-          {/* STEP 2: PROCESSING ANIMATION */}
+
           {modalStep === 'PROCESSING' && (
             <div className="bg-white rounded-3xl p-10 max-w-sm w-full shadow-2xl flex flex-col items-center justify-center text-center space-y-6 animate-in fade-in zoom-in-95 duration-200">
               <h2 className="text-xl font-bold text-gray-900">
                 Processing Your Request
               </h2>
 
-              {/* Animated progress bar */}
+
               <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden mt-2">
                 <div
                   className="h-full bg-[#F16A43] rounded-full transition-all duration-200 ease-out"
@@ -444,27 +436,37 @@ export default function Borrow() {
             </div>
           )}
 
-          {/* STEP 3: PROCESS COMPLETED SUCCESS */}
+
           {modalStep === 'SUCCESS' && (
             <div className="bg-white rounded-3xl p-10 max-w-sm w-full shadow-2xl flex flex-col items-center justify-center text-center space-y-8 animate-in fade-in zoom-in-95 duration-200">
               <h2 className="text-xl font-bold text-gray-900">
-                Process Completed
+                Reservation Confirmed
               </h2>
 
               <div className="w-24 h-24 rounded-full bg-[#3EC150] flex items-center justify-center shadow-lg my-2">
                 <Check className="w-14 h-14 text-white stroke-[3]" />
               </div>
-
+              <p className="text-sm text-gray-500">
+                Pick up your book within 24 hours. Your selected return period starts when the admin confirms pickup.
+              </p>
               <button
-                onClick={() => navigate('/shelf')}
-                className="w-full bg-[#F16A43] hover:bg-[#e05831] text-white py-3 rounded-xl font-bold text-xs uppercase shadow-md transition-all"
+                type="button"
+                onClick={() => navigate('/search')}
+                className="w-full rounded-xl bg-[#F16A43] py-3 text-xs font-bold uppercase text-white shadow-md transition hover:bg-[#e05831]"
               >
-                Go to My Shelf
+                Keep Looking
               </button>
             </div>
           )}
         </div>
       )}
+      <AlertCard
+        title={alert?.title}
+        message={alert?.message}
+        actionLabel={alert?.actionLabel}
+        onAction={alert?.onAction}
+        onClose={() => setAlert(null)}
+      />
     </div>
   );
 }

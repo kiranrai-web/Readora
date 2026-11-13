@@ -5,6 +5,7 @@ import { AiFillHeart, AiOutlineHeart } from 'react-icons/ai';
 import BookTable from '../../components/bookTable/bookTable';
 import { getFavorites, toggleFavorite as toggleFavService, getCurrentUser } from '../../services/favoritesService';
 import { getBorrowed } from '../../services/borrowedService';
+import AlertCard from '../../components/alertCard/alertCard';
 
 const API_BASE = 'http://localhost/Readora_API';
 
@@ -67,6 +68,7 @@ const Search = () => {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [favoriteIds, setFavoriteIds] = useState([]);
+  const [alert, setAlert] = useState(null);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const category = searchParams.get('category') || 'All';
@@ -122,8 +124,12 @@ const Search = () => {
   const handleToggleFavorite = async (bookId) => {
     const user = getCurrentUser();
     if (!user) {
-      alert('Please login to add books to your favorites.');
-      navigate('/login');
+      setAlert({
+        title: 'Sign in required',
+        message: 'Please sign in to add books to your favorites.',
+        actionLabel: 'Sign in',
+        onAction: () => navigate('/login'),
+      });
       return;
     }
 
@@ -141,7 +147,10 @@ const Search = () => {
         )
       );
     } else {
-      alert(result.message || 'Failed to update favorite.');
+      setAlert({
+        title: 'Unable to update favorites',
+        message: result.message || 'Failed to update favorite.',
+      });
     }
   };
 
@@ -164,6 +173,13 @@ const Search = () => {
       ) : (
         <BookTable books={books} onToggleFavorite={handleToggleFavorite} />
       )}
+      <AlertCard
+        title={alert?.title}
+        message={alert?.message}
+        actionLabel={alert?.actionLabel}
+        onAction={alert?.onAction}
+        onClose={() => setAlert(null)}
+      />
     </div>
   );
 };

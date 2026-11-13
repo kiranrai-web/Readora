@@ -12,6 +12,8 @@ import About from './pages/about/about';
 import Terms from './pages/T&Condition/terms';
 import Admin from './pages/admin/admin';
 import Profile from './pages/profile/profile';
+import PasswordChangePrompt from './components/passwordChangePrompt/passwordChangePrompt';
+import ReturnedBookPrompt from './components/returnedBookPrompt/returnedBookPrompt';
 
 const ProtectedAdminRoute = ({ children }) => {
   const user = JSON.parse(localStorage.getItem('user') || 'null');
@@ -55,6 +57,8 @@ function App() {
           } 
         />
       </Routes>
+      <ReturnedBookPrompt />
+      <PasswordChangePrompt />
     </BrowserRouter>
   )
 }

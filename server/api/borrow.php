@@ -6,10 +6,11 @@ header("Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 
 require "../config/db.php";
+require_once __DIR__ . "/borrow_helpers.php";
 
-const BORROW_LIMIT_HOURS = 7 * 24;
+const PICKUP_WINDOW_HOURS = 24;
 
-function getBorrowTimeLeftText($borrowedAt)
+function getBorrowTimeLeftText($borrowedAt, $loanDays)
 {
     if (empty($borrowedAt)) {
         return "0 minutes";
@@ -18,7 +19,7 @@ function getBorrowTimeLeftText($borrowedAt)
     $now = new DateTime('now', new DateTimeZone('UTC'));
     $borrowedAtDate = new DateTime($borrowedAt, new DateTimeZone('UTC'));
     $dueAt = clone $borrowedAtDate;
-    $dueAt->modify('+' . BORROW_LIMIT_HOURS . ' hours');
+    $dueAt->modify('+' . (int)$loanDays . ' days');
 
     $remainingSeconds = $dueAt->getTimestamp() - $now->getTimestamp();
     $remainingSeconds = max(0, $remainingSeconds);
@@ -55,18 +56,23 @@ if ($method === 'OPTIONS') {
     exit;
 }
 
+ensureBorrowSchema($conn);
+
 if ($method === 'GET') {
+    expirePickupReservations($conn);
+
     $user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
 
     if (isset($_GET['admin']) && $_GET['admin'] === '1') {
         $stmt = $conn->query("
-            SELECT bb.id, bb.user_id, bb.book_id, bb.borrowed_at,
+            SELECT bb.id, bb.user_id, bb.book_id, bb.status, bb.borrowed_at,
+                   bb.pickup_at, bb.pickup_expires_at, bb.loan_days,
                    u.name AS user_name, u.email,
                    b.title AS book_title, b.quantity, b.available
             FROM borrowed_books bb
             INNER JOIN users u ON u.id = bb.user_id
             INNER JOIN books b ON b.id = bb.book_id
-            WHERE bb.status = 'borrowed'
+            WHERE bb.status IN ('reserved', 'borrowed')
             ORDER BY bb.borrowed_at DESC
         ");
         $loans = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -75,7 +81,7 @@ if ($method === 'GET') {
                    COUNT(bb.id) AS borrowed_count
             FROM users u
             LEFT JOIN borrowed_books bb
-              ON bb.user_id = u.id AND bb.status = 'borrowed'
+              ON bb.user_id = u.id AND bb.status IN ('reserved', 'borrowed')
             GROUP BY u.id, u.name, u.email, u.created_at
             ORDER BY u.created_at DESC
         ");
@@ -83,7 +89,8 @@ if ($method === 'GET') {
         $inventoryStmt = $conn->query("
             SELECT
               COALESCE(SUM(quantity), 0) AS total_books,
-              COALESCE(SUM(quantity - available), 0) AS borrowed_books
+              (SELECT COUNT(*) FROM borrowed_books WHERE status = 'borrowed') AS borrowed_books,
+              (SELECT COUNT(*) FROM borrowed_books WHERE status = 'reserved') AS reserved_books
             FROM books
         ");
         $inventory = $inventoryStmt->fetch(PDO::FETCH_ASSOC);
@@ -94,7 +101,8 @@ if ($method === 'GET') {
             "loans" => $loans,
             "inventory" => [
                 "total_books" => (int)$inventory['total_books'],
-                "borrowed_books" => (int)$inventory['borrowed_books']
+                "borrowed_books" => (int)$inventory['borrowed_books'],
+                "reserved_books" => (int)$inventory['reserved_books']
             ]
         ]);
     }
@@ -104,9 +112,9 @@ if ($method === 'GET') {
     }
 
     $stmt = $conn->prepare("
-        SELECT book_id, borrowed_at, status
+        SELECT book_id, borrowed_at, pickup_at, pickup_expires_at, loan_days, status
         FROM borrowed_books
-        WHERE user_id = ? AND status = 'borrowed'
+        WHERE user_id = ? AND status IN ('reserved', 'borrowed')
     ");
     $stmt->execute([$user_id]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -127,7 +135,71 @@ if ($method === 'POST' || $method === 'PUT') {
         respond(["error" => "user_id and book_id are required"], 400);
     }
 
-    if ($action === 'return') {
+    expirePickupReservations($conn);
+
+    if ($action === 'pickup') {
+        $admin_id = isset($input['admin_id']) ? (int)$input['admin_id'] : 0;
+        $admin_password = isset($input['admin_password']) ? (string)$input['admin_password'] : '';
+        $adminStmt = $conn->prepare("SELECT role, password FROM users WHERE id = ? LIMIT 1");
+        $adminStmt->execute([$admin_id]);
+        $admin = $adminStmt->fetch(PDO::FETCH_ASSOC);
+        if (
+            $admin_id <= 0 ||
+            !$admin ||
+            $admin['role'] !== 'admin' ||
+            !password_verify($admin_password, $admin['password'])
+        ) {
+            respond(["success" => false, "message" => "Admin password is incorrect."], 403);
+        }
+
+        $pickup = $conn->prepare("
+            UPDATE borrowed_books
+            SET status = 'borrowed', pickup_at = NOW(), borrowed_at = NOW(),
+                pickup_expires_at = NULL
+            WHERE user_id = ? AND book_id = ? AND status = 'reserved'
+        ");
+        $pickup->execute([$user_id, $book_id]);
+
+        if ($pickup->rowCount() === 0) {
+            respond(["success" => false, "message" => "This reservation is no longer waiting for pickup."], 409);
+        }
+
+        $loanStmt = $conn->prepare("
+            SELECT loan_days, pickup_at
+            FROM borrowed_books
+            WHERE user_id = ? AND book_id = ? AND status = 'borrowed'
+            ORDER BY pickup_at DESC
+            LIMIT 1
+        ");
+        $loanStmt->execute([$user_id, $book_id]);
+        $loan = $loanStmt->fetch(PDO::FETCH_ASSOC);
+
+        respond([
+            "success" => true,
+            "picked_up" => true,
+            "loan_days" => (int)$loan['loan_days'],
+            "pickup_at" => $loan['pickup_at'],
+            "message" => "Book marked as picked up. The return period has started."
+        ]);
+    }
+
+    if ($action === 'return' || $action === 'admin_return') {
+        if ($action === 'admin_return') {
+            $admin_id = isset($input['admin_id']) ? (int)$input['admin_id'] : 0;
+            $admin_password = isset($input['admin_password']) ? (string)$input['admin_password'] : '';
+            $adminStmt = $conn->prepare("SELECT role, password FROM users WHERE id = ? LIMIT 1");
+            $adminStmt->execute([$admin_id]);
+            $admin = $adminStmt->fetch(PDO::FETCH_ASSOC);
+            if (
+                $admin_id <= 0 ||
+                !$admin ||
+                $admin['role'] !== 'admin' ||
+                !password_verify($admin_password, $admin['password'])
+            ) {
+                respond(["success" => false, "message" => "Admin password is incorrect."], 403);
+            }
+        }
+
         $existing = $conn->prepare("
             SELECT id, borrowed_at
             FROM borrowed_books
@@ -168,38 +240,50 @@ if ($method === 'POST' || $method === 'PUT') {
         ]);
     }
 
+    $loanDays = isset($input['loan_days']) ? (int)$input['loan_days'] : 7;
+    if ($loanDays < 3 || $loanDays > 30) {
+        respond(["success" => false, "message" => "Borrow duration must be between 3 and 30 days."], 400);
+    }
+
+    $conn->beginTransaction();
+    $bookStmt = $conn->prepare("SELECT available, quantity FROM books WHERE id = ? LIMIT 1 FOR UPDATE");
+    $bookStmt->execute([$book_id]);
+    $book = $bookStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$book) {
+        $conn->rollBack();
+        respond(["success" => false, "message" => "Book not found."], 404);
+    }
+
     $check = $conn->prepare("
-        SELECT id, borrowed_at
+        SELECT id, borrowed_at, status, loan_days
         FROM borrowed_books
-        WHERE user_id = ? AND book_id = ? AND status = 'borrowed'
+        WHERE user_id = ? AND book_id = ? AND status IN ('reserved', 'borrowed')
         LIMIT 1
+        FOR UPDATE
     ");
     $check->execute([$user_id, $book_id]);
     $existing = $check->fetch(PDO::FETCH_ASSOC);
 
     if ($existing) {
-        $remainingText = getBorrowTimeLeftText($existing['borrowed_at']);
+        $conn->rollBack();
+        $remainingText = $existing['status'] === 'reserved'
+            ? "waiting for pickup"
+            : getBorrowTimeLeftText($existing['pickup_at'] ?: $existing['borrowed_at'], $existing['loan_days']);
         respond([
             "success" => true,
             "already_borrowed" => true,
-            "message" => "You have already borrowed this book. Borrow time " . $remainingText . ".",
+            "message" => "You already have this book reserved or borrowed (" . $remainingText . ").",
             "borrow_time_left" => $remainingText,
             "borrowed_at" => $existing['borrowed_at']
         ]);
-    }
-
-    $bookStmt = $conn->prepare("SELECT available, quantity FROM books WHERE id = ? LIMIT 1");
-    $bookStmt->execute([$book_id]);
-    $book = $bookStmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$book) {
-        respond(["success" => false, "message" => "Book not found."], 404);
     }
 
     $available = (int)($book['available'] ?? 0);
     $quantity = (int)($book['quantity'] ?? 0);
 
     if ($available <= 0 || $quantity <= 0) {
+        $conn->rollBack();
         respond([
             "success" => false,
             "already_borrowed" => false,
@@ -208,20 +292,25 @@ if ($method === 'POST' || $method === 'PUT') {
     }
 
     $ins = $conn->prepare("
-        INSERT INTO borrowed_books (user_id, book_id, status, borrowed_at)
-        VALUES (?, ?, 'borrowed', NOW())
+        INSERT INTO borrowed_books
+            (user_id, book_id, status, borrowed_at, pickup_expires_at, loan_days)
+        VALUES (?, ?, 'reserved', NOW(), DATE_ADD(NOW(), INTERVAL " . PICKUP_WINDOW_HOURS . " HOUR), ?)
     ");
-    $ins->execute([$user_id, $book_id]);
+    $ins->execute([$user_id, $book_id, $loanDays]);
 
     $updatedAvailable = max(0, $available - 1);
     $bookUpdate = $conn->prepare("UPDATE books SET available = ? WHERE id = ?");
     $bookUpdate->execute([$updatedAvailable, $book_id]);
+    $conn->commit();
 
     respond([
         "success" => true,
         "already_borrowed" => false,
+        "status" => "reserved",
+        "pickup_expires_at" => date('Y-m-d H:i:s', time() + PICKUP_WINDOW_HOURS * 3600),
+        "loan_days" => $loanDays,
         "available" => $updatedAvailable,
-        "message" => "Book borrowed successfully."
+        "message" => "Book reserved successfully. Pick it up within 24 hours."
     ]);
 }
 

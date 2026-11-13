@@ -28,7 +28,6 @@ const terms = () => {
   return (
     <div className="min-h-screen bg-[#F4F5F9] p-8 font-sans text-gray-700">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <h1 className="text-3xl font-bold text-gray-800 mb-2">
           Terms & <span className="text-[#F16A43]">Conditions</span>
         </h1>
@@ -36,7 +35,7 @@ const terms = () => {
           Last updated: Lorem ipsum dolor sit amet
         </p>
 
-        {/* Intro Card */}
+
         <div className="bg-white rounded-2xl p-8 shadow-sm mb-8">
           <h2 className="text-xl font-bold text-gray-800 mb-4">
             Welcome to <span className="text-[#F16A43]">Readora</span>
@@ -46,7 +45,7 @@ const terms = () => {
           </p>
         </div>
 
-        {/* Terms Sections */}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {sections.map((section) => {
             const Icon = section.icon;
@@ -71,7 +70,7 @@ const terms = () => {
           })}
         </div>
 
-        {/* Additional Terms */}
+
         <div className="bg-white rounded-2xl p-8 shadow-sm mt-8">
           <h2 className="text-xl font-bold text-gray-800 mb-4">
             Additional <span className="text-[#F16A43]">Terms</span>

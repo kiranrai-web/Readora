@@ -3,6 +3,7 @@ import {images} from '../../constants';
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
 import { useNavigate,Link } from "react-router-dom";
 import axios from 'axios';
+import AlertCard from '../../components/alertCard/alertCard';
 
 
 const Login = () => {
@@ -10,6 +11,7 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [alert, setAlert] = useState(null);
   const navigate = useNavigate()
 
   const togglePassword =()=>{
@@ -33,11 +35,18 @@ const handleSubmit = async (e) => {
       const redirectPath = result.data.user.role === 'admin' ? '/admin' : '/';
       navigate(redirectPath);
     } else {
-      alert(result.data.message);
+      setAlert({
+        title: 'Unable to sign in',
+        message: result.data.message || 'Please check your details and try again.',
+      });
     }
 
   } catch (err) {
-    console.log(err);
+    console.error('Error signing in:', err);
+    setAlert({
+      title: 'Unable to sign in',
+      message: err.response?.data?.message || 'Something went wrong. Please try again.',
+    });
   }
 };
   return (
@@ -92,9 +101,16 @@ const handleSubmit = async (e) => {
                 <label for="accept">Remember me</label>
               </div>
               <div className="login__detail-login_forgot-forgot">
-                <a href="#" className="underline">
+                <button
+                  type="button"
+                  onClick={() => setAlert({
+                    title: 'Forgot your password?',
+                    message: 'Please contact a library administrator and provide your account email. They can set a temporary password for you.',
+                  })}
+                  className="underline"
+                >
                   Forgot Password
-                </a>
+                </button>
               </div>
             </div>
             <button 
@@ -116,6 +132,11 @@ const handleSubmit = async (e) => {
 </div>
             </div>
           </div>
+          <AlertCard
+            title={alert?.title}
+            message={alert?.message}
+            onClose={() => setAlert(null)}
+          />
         </div>
       </div>
     </div>

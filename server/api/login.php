@@ -6,8 +6,10 @@ header("Access-Control-Allow-Methods: POST");
 header("Access-Control-Allow-Headers: Content-Type");
 
 require "../config/db.php";
+require_once __DIR__ . "/account_helpers.php";
 
-// Read JSON from React/Postman
+ensureAccountSchema($conn);
+
 $data = json_decode(file_get_contents("php://input"), true);
 
 $email = trim($data["email"] ?? "");
@@ -47,6 +49,7 @@ if (!password_verify($password, $user["password"])) {
 
 
 unset($user["password"]); // Don't return the password hash
+$user["must_change_password"] = (bool)$user["must_change_password"];
 
 echo json_encode([
     "success" => true,
